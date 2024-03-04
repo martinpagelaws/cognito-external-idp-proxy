@@ -1,5 +1,4 @@
 import * as cdk from 'aws-cdk-lib/core';
-import * as dotenv from 'dotenv';
 import { Construct } from 'constructs';
 import { NagSuppressions } from 'cdk-nag';
 
@@ -20,8 +19,6 @@ export class TypescriptStack extends cdk.Stack {
         /*
         GLOBAL CONFIGURATION ITEMS
         */
-
-        dotenv.config();
 
         const apiVersion = this.node.tryGetContext('api_version');
         const authnRoute = this.node.tryGetContext('api_authn_route');

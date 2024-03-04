@@ -5,7 +5,6 @@ In this directory, you can find the same solution as in the root of the reposito
 ## Deployment
 * copy cdk.context.template to cdk.context.json and populate with your environment specifics
 
-
 ## Useful commands
 
 * `npm run build`   compile typescript to js
