@@ -3,8 +3,7 @@
 In this directory, you can find the same solution as in the root of the repository. However, the CDK stack is defined with typescript and you can set the Lambda functions to run the experimental Rust runtime.
 
 ## Deployment
-* set stack configuration in cdk.context.json
-* copy .env.template to .env and populate with required information
+* copy cdk.context.template to cdk.context.json and populate with your environment specifics
 
 
 ## Useful commands
