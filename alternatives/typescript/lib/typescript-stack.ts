@@ -32,9 +32,6 @@ export class TypescriptStack extends cdk.Stack {
         const idpClientId = process.env.IDP_CLIENT_ID;
         const idpClientSecret = process.env.IDP_CLIENT_SECRET;
 
-        console.log(idpClientId);
-        console.log(idpClientSecret);
-
         const allowedRuntimes: Array<string> = ['python', 'rust'];
 
 
@@ -54,7 +51,7 @@ export class TypescriptStack extends cdk.Stack {
                 process.exit(1);
             }
             default:
-                console.log('Unsupported runtime defined in cdk.json lambda_runtime. Use: ' + allowedRuntimes);
+                console.log('Unsupported runtime defined in cdk.context.json lambda_runtime. Use: ' + allowedRuntimes);
                 process.exit(1);
         }
         /* Not yet
