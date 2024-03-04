@@ -4,29 +4,38 @@ import { NagSuppressions } from 'cdk-nag';
 
 import * as apigw from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { RetentionDays } from "aws-cdk-lib/aws-logs";
 
 export class TypescriptStack extends cdk.Stack {
+    private readonly apiGw: apigw.HttpApi;
     private readonly authnFnExecRole: iam.Role;
-    private readonly authnInt: HttpLambdaIntegration;
-    private readonly authnFnPython: lambda.Function;
+    private readonly authnIntegration: HttpLambdaIntegration;
+    private readonly authnFn: lambda.Function;
+    private readonly dynamoDbStateTable: dynamodb.Table; 
 
     constructor(scope: Construct, id: string, props?: cdk.StackProps) {
         super(scope, id, props);
+
 
         /*
         GLOBAL CONFIGURATION ITEMS
         */
 
+        // API GATEWAY
         const apiVersion = this.node.tryGetContext('api_version');
         const authnRoute = this.node.tryGetContext('api_authn_route');
         const callbRoute = this.node.tryGetContext('api_callback_route');
         const tokenRoute = this.node.tryGetContext('api_token_route');
-        const lambdaRuntime = this.node.tryGetContext('lambda_runtime');
 
+        // LAMBDA AND ENV VARS
+        const lambdaRuntime = this.node.tryGetContext('lambda_runtime');
         const allowedRuntimes: Array<string> = ['python', 'rust'];
+        const idpClientId = this.node.tryGetContext('idp_client_id');
+        const idpClientSecret = this.node.tryGetContext('idp_client_secret');
+        const idpAuthUri = this.node.tryGetContext('idp_issuer_url') + this.node.tryGetContext('idp_auth_path');
 
 
         /*
@@ -34,10 +43,12 @@ export class TypescriptStack extends cdk.Stack {
         */
 
         this.authnFnExecRole = this.createAuthnFnExecRole();
+
+        // Deploy lambdas with the selected runtime
         switch ( lambdaRuntime ) {
             case 'python': {
-                console.log('Deploying Python Lambdas');
-                this.authnFnPython = this.createAuthnFnPython(this.authnFnExecRole);
+                console.info('Deploying Python Lambdas');
+                this.authnFn = this.createAuthnFnPython(this.authnFnExecRole);
                 break;
             }
             case 'rust': {
@@ -45,9 +56,33 @@ export class TypescriptStack extends cdk.Stack {
                 process.exit(1);
             }
             default:
-                console.log('Unsupported runtime defined in cdk.context.json lambda_runtime. Use: ' + allowedRuntimes);
+                console.log('Unsupported runtime defined in cdk.context.json lambda_runtime. Use: ' + allowedRuntimes.toString().replace(/,/g, " or "));
                 process.exit(1);
         }
+
+        this.authnFn.addEnvironment('ClientId', idpClientId);
+        this.authnFn.addEnvironment('IdpAuthUri', idpAuthUri);
+
+        // add a Dynamod DB table to store state information
+        this.dynamoDbStateTable = this.createDynamoDbStateTable();
+        this.authnFn.addEnvironment('DynamoDbStateTable', this.dynamoDbStateTable.tableName);
+
+        this.authnFn.role?.attachInlinePolicy(new iam.Policy(this, 'DynamoDbPolicy', {
+            statements: [new iam.PolicyStatement({
+                actions: ['dynamodb:DescribeTable', 'dynamodb:PutItem'],
+                resources: [this.dynamoDbStateTable.tableArn],
+            })],
+        }));
+
+        // add an API Gateway
+        this.apiGw = this.createApiGw();
+        this.authnFn.addEnvironment('ProxyCallbackUri', this.apiGw.apiEndpoint + "/" + apiVersion + callbRoute);
+
+
+        /*
+        CDK NAG SUPPRESSION RULES
+        */
+
         /* Not yet
         NagSuppressions.addResourceSuppressions(
             this.authnFnExecRole, [
@@ -72,21 +107,31 @@ export class TypescriptStack extends cdk.Stack {
         )
 
         NagSuppressions.addResourceSuppressions(
-            this.authnFnPython,
+            this.authnFn,
             [
                 { id: 'AwsSolutions-L1', reason: 'No tests in place to guarantee code runs in other versions.' }
             ]
         )
+
+        NagSuppressions.addResourceSuppressions(
+            this.dynamoDbStateTable,
+            [
+                { id: 'AwsSolutions-DDB3', reason: 'Short lived data only.' }
+            ]
+        )
+
+    }
+
+    private createApiGw(): apigw.HttpApi {
+        return new apigw.HttpApi(this, 'ApiGateway', {
+            description: 'Handles requests and responses between Cognito and 3rd party IdP',
+            createDefaultStage: false,
+        });        
     }
 
     private createAuthnFnExecRole(): iam.Role {
         return new iam.Role(this, 'AuthorizationFunctionExecRole', {
             assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
-            /*
-            managedPolicies: [
-                iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasixExecutionRole')
-            ]
-            */
         });
     }
 
@@ -97,6 +142,17 @@ export class TypescriptStack extends cdk.Stack {
             logRetention: RetentionDays.FIVE_DAYS,
             role: executionRole,
             runtime: lambda.Runtime.PYTHON_3_10,
+        });
+    }
+
+    private createDynamoDbStateTable(): dynamodb.Table {
+        return new dynamodb.Table (this, 'StateTable', {
+            partitionKey: {
+                name: 'state',
+                type: dynamodb.AttributeType.STRING,
+            },
+            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+            timeToLiveAttribute: 'ttl',
         });
     }
 
