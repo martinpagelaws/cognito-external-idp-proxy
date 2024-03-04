@@ -1,4 +1,5 @@
 import * as cdk from 'aws-cdk-lib/core';
+import * as dotenv from 'dotenv';
 import { Construct } from 'constructs';
 import { NagSuppressions } from 'cdk-nag';
 
@@ -20,11 +21,19 @@ export class TypescriptStack extends cdk.Stack {
         GLOBAL CONFIGURATION ITEMS
         */
 
+        dotenv.config();
+
         const apiVersion = this.node.tryGetContext('api_version');
         const authnRoute = this.node.tryGetContext('api_authn_route');
         const callbRoute = this.node.tryGetContext('api_callback_route');
         const tokenRoute = this.node.tryGetContext('api_token_route');
         const lambdaRuntime = this.node.tryGetContext('lambda_runtime');
+
+        const idpClientId = process.env.IDP_CLIENT_ID;
+        const idpClientSecret = process.env.IDP_CLIENT_SECRET;
+
+        console.log(idpClientId);
+        console.log(idpClientSecret);
 
         const allowedRuntimes: Array<string> = ['python', 'rust'];
 

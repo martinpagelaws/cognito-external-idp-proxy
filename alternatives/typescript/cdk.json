@@ -17,11 +17,6 @@
         ]
     },
     "context": {
-        "api_version": "v1",
-        "api_authn_route": "authorize",
-        "api_callback_route": "callback",
-        "api_token_route": "token",
-        "lambda_runtime": "python",
         "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
         "@aws-cdk/core:checkSecretUsage": true,
         "@aws-cdk/core:target-partitions": [
