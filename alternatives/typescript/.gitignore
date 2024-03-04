@@ -9,3 +9,4 @@ cdk.out
 
 # Files with potentially sensitive information
 .env
+cdk.context.json

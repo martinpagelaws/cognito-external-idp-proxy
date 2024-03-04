@@ -1,0 +1,8 @@
+{
+        "api_version": "v1",
+        "api_authn_route": "authorize",
+        "api_callback_route": "callback",
+        "api_token_route": "token",
+        "lambda_runtime": "python"
+}
+

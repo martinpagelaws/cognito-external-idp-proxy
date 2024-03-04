@@ -29,9 +29,6 @@ export class TypescriptStack extends cdk.Stack {
         const tokenRoute = this.node.tryGetContext('api_token_route');
         const lambdaRuntime = this.node.tryGetContext('lambda_runtime');
 
-        const idpClientId = process.env.IDP_CLIENT_ID;
-        const idpClientSecret = process.env.IDP_CLIENT_SECRET;
-
         const allowedRuntimes: Array<string> = ['python', 'rust'];
 
 
