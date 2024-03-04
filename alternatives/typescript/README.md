@@ -1,8 +1,7 @@
-# Welcome to your CDK TypeScript project
+# Typescript deployment option
 
-This is a blank project for CDK development with TypeScript.
+In this directory, you can find the same solution as in the root of the repository. However, the CDK stack is defined with typescript and you can set the Lambda functions to run the experimental Rust runtime.
 
-The `cdk.json` file tells the CDK Toolkit how to execute your app.
 
 ## Useful commands
 
