@@ -7,6 +7,7 @@ This sample shows how to deploy a proxy between an Amazon Cognito User Pool and 
 This repository contains the building blocks for all communication between a Cognito User Pool and a 3rd party OIDC IdP to add PKCE and Private Key JWT functionality. The main components are defined as:
 * Lambda Function code in Python for handling authorize, callback and token requests in the [lambda directory](lambda/)
 * two [CDK stacks](cdk/) - one with PKCE, one without. You can toggle the use of PKCE in the context file (see "Deployment" section)
+* alternative deployment and languages in the alternatives directory
 
 ## What this repository does not contain
 This repository does not contain a front-end application to integrate with the Cognito User Pool. The provisioned resources work without any frontend application but if you want to use it in an end-to-end example, you can:
