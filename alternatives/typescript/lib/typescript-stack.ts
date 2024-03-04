@@ -11,7 +11,7 @@ import { RetentionDays } from "aws-cdk-lib/aws-logs";
 export class TypescriptStack extends cdk.Stack {
     private readonly authnFnExecRole: iam.Role;
     private readonly authnInt: HttpLambdaIntegration;
-    private readonly authnFn: lambda.Function;
+    private readonly authnFnPython: lambda.Function;
 
     constructor(scope: Construct, id: string, props?: cdk.StackProps) {
         super(scope, id, props);
@@ -24,6 +24,9 @@ export class TypescriptStack extends cdk.Stack {
         const authnRoute = this.node.tryGetContext('api_authn_route');
         const callbRoute = this.node.tryGetContext('api_callback_route');
         const tokenRoute = this.node.tryGetContext('api_token_route');
+        const lambdaRuntime = this.node.tryGetContext('lambda_runtime');
+
+        const allowedRuntimes: Array<string> = ['python', 'rust'];
 
 
         /*
@@ -31,8 +34,20 @@ export class TypescriptStack extends cdk.Stack {
         */
 
         this.authnFnExecRole = this.createAuthnFnExecRole();
-        this.authnFn = this.createAuthnFn(this.authnFnExecRole);
-
+        switch ( lambdaRuntime ) {
+            case 'python': {
+                console.log('Deploying Python Lambdas');
+                this.authnFnPython = this.createAuthnFnPython(this.authnFnExecRole);
+                break;
+            }
+            case 'rust': {
+                console.log('Rust runtime not yet implemented');
+                process.exit(1);
+            }
+            default:
+                console.log('Unsupported runtime defined in cdk.json lambda_runtime. Use: ' + allowedRuntimes);
+                process.exit(1);
+        }
         /* Not yet
         NagSuppressions.addResourceSuppressions(
             this.authnFnExecRole, [
@@ -57,7 +72,7 @@ export class TypescriptStack extends cdk.Stack {
         )
 
         NagSuppressions.addResourceSuppressions(
-            this.authnFn,
+            this.authnFnPython,
             [
                 { id: 'AwsSolutions-L1', reason: 'No tests in place to guarantee code runs in other versions.' }
             ]
@@ -75,7 +90,7 @@ export class TypescriptStack extends cdk.Stack {
         });
     }
 
-    private createAuthnFn(executionRole: iam.Role): lambda.Function {
+    private createAuthnFnPython(executionRole: iam.Role): lambda.Function {
         return new lambda.Function (this, 'AuthorizationFunction', {
             code: lambda.Code.fromAsset('./lambda/python/authorize'),
             handler: 'authorize_flow.handler',
