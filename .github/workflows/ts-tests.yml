@@ -22,7 +22,13 @@ jobs:
           node-version: "18"
       - name: npm
         run: npm install
-      - name: cdk
+      - name: cdk smoke test
         run: |
           cp cdk.context.template cdk.context.json
           npx cdk synth
+      - name: lint
+        run:
+          npx eslint
+      - name: prettier
+        run:
+          npx prettier -c .
