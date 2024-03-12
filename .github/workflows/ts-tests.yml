@@ -2,12 +2,12 @@ name: typescript-tests
 on:
   push:
     paths: 
-      - "./alternatives/typescript/**"
-      - "./.github/workflows/**"
+      - "alternatives/typescript/**"
+      - ".github/workflows/**"
   pull_request:
     paths: 
-      - "./alternatives/typescript/**"
-      - "./.github/workflows/**"
+      - "alternatives/typescript/**"
+      - ".github/workflows/**"
 
 jobs:
   tests:
