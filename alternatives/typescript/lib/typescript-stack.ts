@@ -18,6 +18,10 @@ export class TypescriptStack extends cdk.Stack {
     private readonly authnFnSecretsManagerPolicy: iam.Policy;
     private readonly authnIntegration: HttpLambdaIntegration;
     private readonly authnIntegrationRoute;
+    private readonly callbIntegration: HttpLambdaIntegration;
+    private readonly callbIntegrationRoute;
+    private readonly tokenIntegration: HttpLambdaIntegration;
+    private readonly tokenIntegrationRoute;
     private readonly authnFn: lambda.Function;
     private readonly callbFn: lambda.Function;
     private readonly tokenFn: lambda.Function;
@@ -106,11 +110,34 @@ export class TypescriptStack extends cdk.Stack {
         );
 
         // create an API GW Lambda integration for authorization and add corresponding route
-        this.authnIntegration = this.createAuthnIntegration(this.authnFn);
+        this.authnIntegration = this.createIntegration(
+            "AuthnIntegration",
+            this.authnFn
+        );
         this.authnIntegrationRoute = this.apiGw.addRoutes({
             path: authnRoute,
             methods: [apigw.HttpMethod.GET],
             integration: this.authnIntegration,
+        });
+
+        this.callbIntegration = this.createIntegration(
+            "CallbIntegration",
+            this.authnFn
+        );
+        this.callbIntegrationRoute = this.apiGw.addRoutes({
+            path: callbRoute,
+            methods: [apigw.HttpMethod.GET],
+            integration: this.callbIntegration,
+        });
+
+        this.tokenIntegration = this.createIntegration(
+            "TokenIntegration",
+            this.authnFn
+        );
+        this.tokenIntegrationRoute = this.apiGw.addRoutes({
+            path: tokenRoute,
+            methods: [apigw.HttpMethod.GET, apigw.HttpMethod.POST],
+            integration: this.tokenIntegration,
         });
 
         // CDK NAG SUPPRESSION RULES
@@ -177,6 +204,14 @@ export class TypescriptStack extends cdk.Stack {
         NagSuppressions.addResourceSuppressions(this.authnIntegrationRoute, [
             { id: "AwsSolutions-APIG4", reason: "Demo purposes only." },
         ]);
+
+        NagSuppressions.addResourceSuppressions(this.callbIntegrationRoute, [
+            { id: "AwsSolutions-APIG4", reason: "Demo purposes only." },
+        ]);
+
+        NagSuppressions.addResourceSuppressions(this.tokenIntegrationRoute, [
+            { id: "AwsSolutions-APIG4", reason: "Demo purposes only." },
+        ]);
     }
 
     private createApiGw(): apigw.HttpApi {
@@ -187,43 +222,16 @@ export class TypescriptStack extends cdk.Stack {
         });
     }
 
-    private createAuthnIntegration(fn: lambda.Function): HttpLambdaIntegration {
-        return new HttpLambdaIntegration("AuthnIntegration", fn);
+    private createIntegration(
+        name: string,
+        fn: lambda.Function
+    ): HttpLambdaIntegration {
+        return new HttpLambdaIntegration(name, fn);
     }
 
     private createFnExecRole(n: string): iam.Role {
         return new iam.Role(this, n + "FunctionExecRole", {
             assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
-        });
-    }
-
-    private createAuthnFnPython(executionRole: iam.Role): lambda.Function {
-        return new lambda.Function(this, "AuthorizationFunction", {
-            code: lambda.Code.fromAsset("./lambda/python/authorize"),
-            handler: "authorize_flow.handler",
-            logRetention: RetentionDays.FIVE_DAYS,
-            role: executionRole,
-            runtime: lambda.Runtime.PYTHON_3_10,
-        });
-    }
-
-    private createCallbFnPython(executionRole: iam.Role): lambda.Function {
-        return new lambda.Function(this, "CallbackFunction", {
-            code: lambda.Code.fromAsset("./lambda/python/callback"),
-            handler: "callback_flow.handler",
-            logRetention: RetentionDays.FIVE_DAYS,
-            role: executionRole,
-            runtime: lambda.Runtime.PYTHON_3_10,
-        });
-    }
-
-    private createTokenFnPython(executionRole: iam.Role): lambda.Function {
-        return new lambda.Function(this, "TokenFunction", {
-            code: lambda.Code.fromAsset("./lambda/python/token"),
-            handler: "token_flow.handler",
-            logRetention: RetentionDays.FIVE_DAYS,
-            role: executionRole,
-            runtime: lambda.Runtime.PYTHON_3_10,
         });
     }
 
