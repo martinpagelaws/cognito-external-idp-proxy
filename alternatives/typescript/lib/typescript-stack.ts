@@ -3,6 +3,7 @@ import { Construct } from "constructs";
 import { NagSuppressions } from "cdk-nag";
 
 import * as apigw from "aws-cdk-lib/aws-apigatewayv2";
+import { HttpRoute } from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as iam from "aws-cdk-lib/aws-iam";
@@ -17,11 +18,11 @@ export class TypescriptStack extends cdk.Stack {
     private readonly authnFnDynamoDbPolicy: iam.Policy;
     private readonly authnFnSecretsManagerPolicy: iam.Policy;
     private readonly authnIntegration: HttpLambdaIntegration;
-    private readonly authnIntegrationRoute;
+    private readonly authnIntegrationRoute: HttpRoute[];
     private readonly callbIntegration: HttpLambdaIntegration;
-    private readonly callbIntegrationRoute;
+    private readonly callbIntegrationRoute: HttpRoute[];
     private readonly tokenIntegration: HttpLambdaIntegration;
-    private readonly tokenIntegrationRoute;
+    private readonly tokenIntegrationRoute: HttpRoute[];
     private readonly authnFn: lambda.Function;
     private readonly callbFn: lambda.Function;
     private readonly tokenFn: lambda.Function;
@@ -132,7 +133,7 @@ export class TypescriptStack extends cdk.Stack {
 
         this.tokenIntegration = this.createIntegration(
             "TokenIntegration",
-            this.tokenFn,
+            this.tokenFn
         );
         this.tokenIntegrationRoute = this.apiGw.addRoutes({
             path: tokenRoute,
