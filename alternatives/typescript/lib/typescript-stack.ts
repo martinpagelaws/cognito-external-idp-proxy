@@ -12,8 +12,14 @@ import { RetentionDays } from "aws-cdk-lib/aws-logs";
 export class TypescriptStack extends cdk.Stack {
     private readonly apiGw: apigw.HttpApi;
     private readonly authnFnExecRole: iam.Role;
+    private readonly callbFnExecRole: iam.Role;
+    private readonly tokenFnExecRole: iam.Role;
+    private readonly authnFnDynamoDbPolicy: iam.Policy;
+    private readonly authnFnSecretsManagerPolicy: iam.Policy;
     private readonly authnIntegration: HttpLambdaIntegration;
     private readonly authnFn: lambda.Function;
+    private readonly callbFn: lambda.Function;
+    private readonly tokenFn: lambda.Function;
     private readonly dynamoDbStateTable: dynamodb.Table; 
 
     constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -42,21 +48,26 @@ export class TypescriptStack extends cdk.Stack {
         RESOURCE DEFINITIONS
         */
 
-        this.authnFnExecRole = this.createAuthnFnExecRole();
+        // Empty Lambda Execution roles to later populate them with relevant statements
+        this.authnFnExecRole = this.createFnExecRole('Authorization');
+        this.callbFnExecRole = this.createFnExecRole('Callback');
+        this.tokenFnExecRole = this.createFnExecRole('Token');
 
         // Deploy lambdas with the selected runtime
         switch ( lambdaRuntime ) {
             case 'python': {
                 console.info('Deploying Python Lambdas');
-                this.authnFn = this.createAuthnFnPython(this.authnFnExecRole);
+                this.authnFn = this.createFnPython('Authorization', this.authnFnExecRole);
+                this.callbFn = this.createFnPython('Callback', this.callbFnExecRole);
+                this.tokenFn = this.createFnPython('Token', this.tokenFnExecRole);
                 break;
             }
             case 'rust': {
-                console.log('Rust runtime not yet implemented');
+                console.error('Rust runtime not yet implemented');
                 process.exit(1);
             }
             default:
-                console.log('Unsupported runtime defined in cdk.context.json lambda_runtime. Use: ' + allowedRuntimes.toString().replace(/,/g, " or "));
+                console.error('Unsupported runtime defined in cdk.context.json lambda_runtime. Use: ' + allowedRuntimes.toString().replace(/,/g, " or "));
                 process.exit(1);
         }
 
@@ -67,12 +78,12 @@ export class TypescriptStack extends cdk.Stack {
         this.dynamoDbStateTable = this.createDynamoDbStateTable();
         this.authnFn.addEnvironment('DynamoDbStateTable', this.dynamoDbStateTable.tableName);
 
-        this.authnFn.role?.attachInlinePolicy(new iam.Policy(this, 'DynamoDbPolicy', {
-            statements: [new iam.PolicyStatement({
-                actions: ['dynamodb:DescribeTable', 'dynamodb:PutItem'],
-                resources: [this.dynamoDbStateTable.tableArn],
-            })],
-        }));
+        // Grant least privilege permissions to auth function for state table and secretsmanager
+        this.authnFnDynamoDbPolicy = this.createAuthnFnDynamoDbPolicy();
+        this.authnFn.role?.attachInlinePolicy(this.authnFnDynamoDbPolicy);
+
+        this.authnFnSecretsManagerPolicy = this.createAuthnFnSecretsManagerPolicy();
+        this.authnFn.role?.attachInlinePolicy(this.authnFnSecretsManagerPolicy);
 
         // add an API Gateway
         this.apiGw = this.createApiGw();
@@ -83,14 +94,11 @@ export class TypescriptStack extends cdk.Stack {
         CDK NAG SUPPRESSION RULES
         */
 
-        /* Not yet
         NagSuppressions.addResourceSuppressions(
-            this.authnFnExecRole, [
-                { id: 'AwsSolutions-IAM4', reason: 'Demo purposes only.' },
+            this.authnFnSecretsManagerPolicy, [
                 { id: 'AwsSolutions-IAM5', reason: 'API is resource agnostic but resource key required in statement.' },
             ]
         );
-        */
 
         NagSuppressions.addResourceSuppressionsByPath(
             this, this.stackName + '/LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8a/ServiceRole/Resource',
@@ -114,6 +122,20 @@ export class TypescriptStack extends cdk.Stack {
         )
 
         NagSuppressions.addResourceSuppressions(
+            this.callbFn,
+            [
+                { id: 'AwsSolutions-L1', reason: 'No tests in place to guarantee code runs in other versions.' }
+            ]
+        )
+
+        NagSuppressions.addResourceSuppressions(
+            this.tokenFn,
+            [
+                { id: 'AwsSolutions-L1', reason: 'No tests in place to guarantee code runs in other versions.' }
+            ]
+        )
+
+        NagSuppressions.addResourceSuppressions(
             this.dynamoDbStateTable,
             [
                 { id: 'AwsSolutions-DDB3', reason: 'Short lived data only.' }
@@ -129,8 +151,8 @@ export class TypescriptStack extends cdk.Stack {
         });        
     }
 
-    private createAuthnFnExecRole(): iam.Role {
-        return new iam.Role(this, 'AuthorizationFunctionExecRole', {
+    private createFnExecRole(n: string): iam.Role {
+        return new iam.Role(this, n + 'FunctionExecRole', {
             assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
         });
     }
@@ -142,6 +164,54 @@ export class TypescriptStack extends cdk.Stack {
             logRetention: RetentionDays.FIVE_DAYS,
             role: executionRole,
             runtime: lambda.Runtime.PYTHON_3_10,
+        });
+    }
+
+    private createCallbFnPython(executionRole: iam.Role): lambda.Function {
+        return new lambda.Function (this, 'CallbackFunction', {
+            code: lambda.Code.fromAsset('./lambda/python/callback'),
+            handler: 'callback_flow.handler',
+            logRetention: RetentionDays.FIVE_DAYS,
+            role: executionRole,
+            runtime: lambda.Runtime.PYTHON_3_10,
+        });
+    }
+
+    private createTokenFnPython(executionRole: iam.Role): lambda.Function {
+        return new lambda.Function (this, 'TokenFunction', {
+            code: lambda.Code.fromAsset('./lambda/python/token'),
+            handler: 'token_flow.handler',
+            logRetention: RetentionDays.FIVE_DAYS,
+            role: executionRole,
+            runtime: lambda.Runtime.PYTHON_3_10,
+        });
+    }
+
+    private createFnPython(n: string, executionRole: iam.Role): lambda.Function {
+        return new lambda.Function (this, n + 'Function', {
+            code: lambda.Code.fromAsset('./lambda/python/' + n.toLowerCase()),
+            handler: n.toLowerCase() + '_flow.handler',
+            logRetention: RetentionDays.FIVE_DAYS,
+            role: executionRole,
+            runtime: lambda.Runtime.PYTHON_3_10,
+        });
+    }
+
+    private createAuthnFnDynamoDbPolicy(): iam.Policy {
+        return new iam.Policy(this, 'DynamoDbPolicy', {
+            statements: [new iam.PolicyStatement({
+                actions: ['dynamodb:DescribeTable', 'dynamodb:PutItem'],
+                resources: [this.dynamoDbStateTable.tableArn],
+            })],
+        });
+    }
+
+    private createAuthnFnSecretsManagerPolicy(): iam.Policy {
+        return new iam.Policy(this, 'SecretsManagerPolicy', {
+            statements: [new iam.PolicyStatement({
+                actions: ['secresmanager:GetRandomPassword'],
+                resources: ['*'],
+            })],
         });
     }
 
