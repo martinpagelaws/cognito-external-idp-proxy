@@ -30,3 +30,18 @@ jobs:
           echo synth test with PKCE and Private Key JWT
           sed -i 's/\"pkce\": false/\"pkce\": true/g' cdk.context.json
           cdk synth
+      - name: python sec scan
+        run: |
+          pip install bandit
+          bandit -r ./
+      - name: static code analysis
+        run: |
+          pip install semgrep
+          semgrep scan --config auto
+      - name: python package scan - ignore future alternatives
+        run: |
+          pip install pip-audit
+          for i in $(find . -name requirements.txt -not -path "*/alternatives/*")
+          do
+            pip-audit -r $i
+          done
