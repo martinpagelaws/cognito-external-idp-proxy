@@ -19,14 +19,14 @@ jobs:
         run: pip install -r ./lambda/token/requirements.txt --target ./layers/token/python --only-binary=":all:" --platform manylinux2014_x86_64
       - name: install cdk
         run: npm install -g aws-cdk
+      - name: smoke-test-pjwt-only
+        run: |
+          cp cdk.context.template cdk.context.json
+          echo synth test with Private Key JWT only
+          cdk synth
       - name: smoke-test-full
         run: |
           cp cdk.context.template cdk.context.json
           echo synth test with PKCE and Private Key JWT
-          cdk synth
-      - name: smoke-test-pjwt-only
-        run: |
-          cp cdk.context.template cdk.context.json
-          echo synth test with only Private Key JWT
           sed -i 's/\"pkce\": false/\"pkce\": true/g' cdk.context.json
           cdk synth
