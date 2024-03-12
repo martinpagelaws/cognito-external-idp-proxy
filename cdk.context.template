@@ -10,7 +10,7 @@
   "idp_client_id": "YOUR_CLIENT_ID",
   "idp_client_secret": "YOUR_CLIENT_SECRET",
   "idp_issuer_url": "https://example.com",
-  "idp_name": "INTEGRATION_NAME",
+  "idp_name": "myidp",
   "idp_scopes": "openid email profile",
   "pkce": false,
   "stack_name": "CognitoExternalIdpProxyStack",
