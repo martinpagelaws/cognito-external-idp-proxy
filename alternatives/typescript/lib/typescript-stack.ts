@@ -122,7 +122,7 @@ export class TypescriptStack extends cdk.Stack {
 
         this.callbIntegration = this.createIntegration(
             "CallbIntegration",
-            this.authnFn
+            this.callbFn
         );
         this.callbIntegrationRoute = this.apiGw.addRoutes({
             path: callbRoute,
@@ -132,7 +132,7 @@ export class TypescriptStack extends cdk.Stack {
 
         this.tokenIntegration = this.createIntegration(
             "TokenIntegration",
-            this.authnFn
+            this.tokenFn,
         );
         this.tokenIntegrationRoute = this.apiGw.addRoutes({
             path: tokenRoute,
