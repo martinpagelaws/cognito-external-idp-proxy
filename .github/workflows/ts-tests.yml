@@ -1,0 +1,21 @@
+name: typescript-tests
+on:
+  push:
+    paths: ["alternatives/typescript/**"]
+  pull_request:
+    paths: ["alternatives/typescript/**"]
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+      - name: npm
+        run: npm install
+      - name: cdk
+        run: |
+          cp cdk.context.template cdk.context.json
+          cdk synth
