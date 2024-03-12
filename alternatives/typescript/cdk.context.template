@@ -1,8 +1,12 @@
 {
-        "api_version": "v1",
-        "api_authn_route": "authorize",
-        "api_callback_route": "callback",
-        "api_token_route": "token",
-        "lambda_runtime": "python"
+    "api_version": "v1",
+    "api_authn_route": "authorize",
+    "api_callback_route": "callback",
+    "api_token_route": "token",
+    "lambda_runtime": "python",
+    "idp_client_id": "someid",
+    "idp_client_secret": "somesecret",
+    "idp_issuer_url": "https://example.com",
+    "idp_auth_path": "/oauth2/authorize"
 }
 

@@ -3,9 +3,11 @@ on:
   push:
     paths-ignore:
       - "./alternatives/**"
+      - "ts-tests.yml"
   pull_request:
     paths-ignore:
       - "./alternatives/**"
+      - "ts-tests.yml"
 
 
 jobs:
