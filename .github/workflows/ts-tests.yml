@@ -25,4 +25,4 @@ jobs:
       - name: cdk
         run: |
           cp cdk.context.template cdk.context.json
-          cdk synth
+          npx cdk synth
