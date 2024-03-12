@@ -2,10 +2,10 @@ name: python-tests
 on: 
   push:
     paths-ignore:
-      - alternatives
+      - "./alternatives/**"
   pull_request:
     paths-ignore:
-      - alternatives
+      - "./alternatives/**"
 
 
 jobs:

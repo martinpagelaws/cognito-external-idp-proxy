@@ -1,9 +1,9 @@
 name: typescript-tests
 on:
   push:
-    paths: ["alternatives/typescript/**"]
+    paths: ["./alternatives/typescript/**"]
   pull_request:
-    paths: ["alternatives/typescript/**"]
+    paths: ["./alternatives/typescript/**"]
 
 jobs:
   tests:
