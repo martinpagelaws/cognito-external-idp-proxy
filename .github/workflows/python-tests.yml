@@ -1,10 +1,5 @@
 name: python-tests
-on:
-  push:
-    branches: [main, cicd]
-  pull_request:
-    branches: [main]
-  workflow_dispatch:
+on: [push, pull_request]
 
 
 jobs:
