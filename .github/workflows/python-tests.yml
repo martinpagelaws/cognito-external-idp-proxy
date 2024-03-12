@@ -18,4 +18,6 @@ jobs:
       - name: node
         run: node --version
       - name: cdk
-        run: cdk --version
+        run:
+          - npm install -g aws-cdk
+          - cdk --version
