@@ -13,11 +13,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "18"
-      - name: dependencies
+      - name: install python dependencies
         run: pip install -r requirements.txt
-      - name: node
-        run: node --version
-      - name: cdk
-        run:
-          - npm install -g aws-cdk
-          - cdk --version
+      - name: install cdk
+        run: npm install -g aws-cdk
