@@ -1,5 +1,11 @@
 name: python-tests
-on: [push, pull_request]
+on: 
+  push:
+    paths-ignore:
+      - alternatives
+  pull_request:
+    paths-ignore:
+      - alternatives
 
 
 jobs:
