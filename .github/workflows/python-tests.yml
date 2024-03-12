@@ -33,7 +33,7 @@ jobs:
       - name: python sec scan
         run: |
           pip install bandit
-          bandit -r ./
+          bandit -r ./ --exclude ./cdk.out --exclude ./layers
       - name: static code analysis
         run: |
           pip install semgrep
