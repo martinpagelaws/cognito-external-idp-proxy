@@ -8,10 +8,12 @@ import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
+import * as logs from "aws-cdk-lib/aws-logs";
 import { RetentionDays } from "aws-cdk-lib/aws-logs";
 
 export class TypescriptStack extends cdk.Stack {
     private readonly apiGw: apigw.HttpApi;
+    private readonly apiGwStage: apigw.CfnStage;
     private readonly authnFnExecRole: iam.Role;
     private readonly callbFnExecRole: iam.Role;
     private readonly tokenFnExecRole: iam.Role;
@@ -137,9 +139,11 @@ export class TypescriptStack extends cdk.Stack {
         );
         this.tokenIntegrationRoute = this.apiGw.addRoutes({
             path: tokenRoute,
-            methods: [apigw.HttpMethod.GET, apigw.HttpMethod.POST],
+            methods: [apigw.HttpMethod.POST],
             integration: this.tokenIntegration,
         });
+
+        this.apiGwStage = this.createApiGwStage(this.apiGw, apiVersion);
 
         // CDK NAG SUPPRESSION RULES
 
@@ -279,6 +283,27 @@ export class TypescriptStack extends cdk.Stack {
             },
             billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
             timeToLiveAttribute: "ttl",
+        });
+    }
+
+    private createApiGwStage(api: apigw.HttpApi, name: string): apigw.CfnStage {
+        const logGroup = new logs.LogGroup(this, "ApiGwLogs");
+        return new apigw.CfnStage(this, "ApiGwStage", {
+            apiId: api.apiId,
+            stageName: name,
+            autoDeploy: true,
+            accessLogSettings: {
+                destinationArn: logGroup.logGroupArn,
+                format: JSON.stringify({
+                    requestId: "$context.requestId",
+                    path: "$context.path",
+                    routeKey: "$context.routeKey",
+                    ip: "$context.identity.sourceIp",
+                    requestTime: "$context.requestTime",
+                    httpMethod: "$context.httpMethod",
+                    statusCode: "$context.status",
+                }),
+            },
         });
     }
 }
