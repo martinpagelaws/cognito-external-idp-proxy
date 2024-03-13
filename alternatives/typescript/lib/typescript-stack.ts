@@ -5,6 +5,7 @@ import { NagSuppressions } from "cdk-nag";
 import * as apigw from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpRoute } from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
+import * as cognito from "aws-cdk-lib/aws-cognito";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
@@ -13,6 +14,9 @@ import { RetentionDays } from "aws-cdk-lib/aws-logs";
 
 export class TypescriptStack extends cdk.Stack {
     private readonly apiGw: apigw.HttpApi;
+    private readonly apiGwAuthnRouteUri;
+    private readonly apiGwCallbRouteUri;
+    private readonly apiGwTokenRouteUri;
     private readonly apiGwStage: apigw.CfnStage;
     private readonly authnFn: lambda.Function;
     private readonly authnFnExecRole: iam.Role;
@@ -24,6 +28,8 @@ export class TypescriptStack extends cdk.Stack {
     private readonly callbFnExecRole: iam.Role;
     private readonly callbIntegration: HttpLambdaIntegration;
     private readonly callbIntegrationRoute: HttpRoute[];
+    private readonly cognitoUserPool: cognito.UserPool;
+    private readonly cognitoUserPoolIdpOidc: cognito.UserPoolIdentityProviderOidc;
     private readonly dynamoDbStateTable: dynamodb.Table;
     private readonly tokenFn: lambda.Function;
     private readonly tokenFnExecRole: iam.Role;
@@ -46,8 +52,11 @@ export class TypescriptStack extends cdk.Stack {
         const allowedRuntimes: Array<string> = ["python", "rust"];
         const idpClientId = this.node.tryGetContext("idp_client_id");
         const idpClientSecret = this.node.tryGetContext("idp_client_secret");
+        const idpIssuerUrl = this.node.tryGetContext("idp_issuer_url");
         const idpAuthUri = this.node.tryGetContext("idp_issuer_url") + this.node.tryGetContext("idp_auth_path");
         const idpScopes = this.node.tryGetContext("idp_scopes");
+        const idpKeysPath = this.node.tryGetContext("idp_keys_path");
+        const idpAttributesPath = this.node.tryGetContext("idp_attributes_path");
 
         // RESOURCE DEFINITIONS
 
@@ -118,6 +127,26 @@ export class TypescriptStack extends cdk.Stack {
         });
 
         this.apiGwStage = this.createApiGwStage(this.apiGw, apiVersion);
+        this.apiGwAuthnRouteUri = this.apiGw.apiEndpoint + "/" + apiVersion + authnRoute;
+        this.apiGwCallbRouteUri = this.apiGw.apiEndpoint + "/" + apiVersion + callbRoute;
+        this.apiGwTokenRouteUri = this.apiGw.apiEndpoint + "/" + apiVersion + tokenRoute;
+
+        this.cognitoUserPool = this.createCognitoUserPool();
+        this.cognitoUserPoolIdpOidc = new cognito.UserPoolIdentityProviderOidc(
+            this, "UserPoolIdentityProviderOidc", {
+                clientId: idpClientId,
+                clientSecret: idpClientSecret,
+                issuerUrl: idpIssuerUrl,
+                userPool: this.cognitoUserPool,
+                attributeRequestMethod: cognito.OidcAttributeRequestMethod.GET,
+                endpoints: {
+                    authorization: this.apiGwAuthnRouteUri,
+                    jwksUri: idpIssuerUrl + idpKeysPath,
+                    token: this.apiGwTokenRouteUri,
+                    userInfo: idpIssuerUrl + idpAttributesPath,
+                },
+            });
+
 
         // CDK NAG SUPPRESSION RULES
 
@@ -198,7 +227,16 @@ export class TypescriptStack extends cdk.Stack {
         NagSuppressions.addResourceSuppressions(this.tokenFnExecRole, [
             { id: "AwsSolutions-IAM4", reason: "Demo purposes only." },
         ]);
+
+        NagSuppressions.addResourceSuppressions(this.cognitoUserPool, [
+            { "id": "AwsSolutions-COG1", "reason": "Demo is supposed to integrate only with external IdP."},
+            { "id": "AwsSolutions-COG2", "reason": "Defined by external IdP."},
+            { "id": "AwsSolutions-COG3", "reason": "Demo purposes only."}
+        ]);
+
     }
+
+    // RESOURCE CREATION FUNCTIONS
 
     private createApiGw(): apigw.HttpApi {
         return new apigw.HttpApi(this, "ApiGateway", {
@@ -280,5 +318,9 @@ export class TypescriptStack extends cdk.Stack {
                 }),
             },
         });
+    }
+
+    private createCognitoUserPool(): cognito.UserPool {
+        return new cognito.UserPool(this, "UserPool");
     }
 }
