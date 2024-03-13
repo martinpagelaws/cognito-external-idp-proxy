@@ -2,11 +2,11 @@ name: python-tests
 on: 
   push:
     paths-ignore:
-      - "./alternatives/**"
+      - "alternatives/**"
       - "ts-tests.yml"
   pull_request:
     paths-ignore:
-      - "./alternatives/**"
+      - "alternatives/**"
       - "ts-tests.yml"
 
 
