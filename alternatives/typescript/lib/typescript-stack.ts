@@ -14,21 +14,21 @@ import { RetentionDays } from "aws-cdk-lib/aws-logs";
 export class TypescriptStack extends cdk.Stack {
     private readonly apiGw: apigw.HttpApi;
     private readonly apiGwStage: apigw.CfnStage;
+    private readonly authnFn: lambda.Function;
     private readonly authnFnExecRole: iam.Role;
-    private readonly callbFnExecRole: iam.Role;
-    private readonly tokenFnExecRole: iam.Role;
     private readonly authnFnDynamoDbPolicy: iam.Policy;
     private readonly authnFnSecretsManagerPolicy: iam.Policy;
     private readonly authnIntegration: HttpLambdaIntegration;
     private readonly authnIntegrationRoute: HttpRoute[];
+    private readonly callbFn: lambda.Function;
+    private readonly callbFnExecRole: iam.Role;
     private readonly callbIntegration: HttpLambdaIntegration;
     private readonly callbIntegrationRoute: HttpRoute[];
+    private readonly dynamoDbStateTable: dynamodb.Table;
+    private readonly tokenFn: lambda.Function;
+    private readonly tokenFnExecRole: iam.Role;
     private readonly tokenIntegration: HttpLambdaIntegration;
     private readonly tokenIntegrationRoute: HttpRoute[];
-    private readonly authnFn: lambda.Function;
-    private readonly callbFn: lambda.Function;
-    private readonly tokenFn: lambda.Function;
-    private readonly dynamoDbStateTable: dynamodb.Table;
 
     constructor(scope: Construct, id: string, props?: cdk.StackProps) {
         super(scope, id, props);
@@ -46,9 +46,8 @@ export class TypescriptStack extends cdk.Stack {
         const allowedRuntimes: Array<string> = ["python", "rust"];
         const idpClientId = this.node.tryGetContext("idp_client_id");
         const idpClientSecret = this.node.tryGetContext("idp_client_secret");
-        const idpAuthUri =
-            this.node.tryGetContext("idp_issuer_url") +
-            this.node.tryGetContext("idp_auth_path");
+        const idpAuthUri = this.node.tryGetContext("idp_issuer_url") + this.node.tryGetContext("idp_auth_path");
+        const idpScopes = this.node.tryGetContext("idp_scopes");
 
         // RESOURCE DEFINITIONS
 
@@ -61,18 +60,9 @@ export class TypescriptStack extends cdk.Stack {
         switch (lambdaRuntime) {
             case "python": {
                 console.info("Deploying Python Lambdas");
-                this.authnFn = this.createFnPython(
-                    "Authorization",
-                    this.authnFnExecRole
-                );
-                this.callbFn = this.createFnPython(
-                    "Callback",
-                    this.callbFnExecRole
-                );
-                this.tokenFn = this.createFnPython(
-                    "Token",
-                    this.tokenFnExecRole
-                );
+                this.authnFn = this.createFnPython("Authorization", this.authnFnExecRole);
+                this.callbFn = this.createFnPython("Callback", this.callbFnExecRole);
+                this.tokenFn = this.createFnPython("Token", this.tokenFnExecRole);
                 break;
             }
             case "rust": {
@@ -92,51 +82,35 @@ export class TypescriptStack extends cdk.Stack {
 
         // add a Dynamod DB table to store state information
         this.dynamoDbStateTable = this.createDynamoDbStateTable();
-        this.authnFn.addEnvironment(
-            "DynamoDbStateTable",
-            this.dynamoDbStateTable.tableName
-        );
+        this.authnFn.addEnvironment("DynamoDbStateTable", this.dynamoDbStateTable.tableName);
 
         // Grant least privilege permissions to auth function for state table and secretsmanager
         this.authnFnDynamoDbPolicy = this.createAuthnFnDynamoDbPolicy();
         this.authnFn.role?.attachInlinePolicy(this.authnFnDynamoDbPolicy);
 
-        this.authnFnSecretsManagerPolicy =
-            this.createAuthnFnSecretsManagerPolicy();
+        this.authnFnSecretsManagerPolicy = this.createAuthnFnSecretsManagerPolicy();
         this.authnFn.role?.attachInlinePolicy(this.authnFnSecretsManagerPolicy);
 
         // add an API Gateway and its details to the authorization env vars
         this.apiGw = this.createApiGw();
-        this.authnFn.addEnvironment(
-            "ProxyCallbackUri",
-            this.apiGw.apiEndpoint + "/" + apiVersion + callbRoute
-        );
+        this.authnFn.addEnvironment("ProxyCallbackUri", this.apiGw.apiEndpoint + "/" + apiVersion + callbRoute);
 
         // create an API GW Lambda integration for authorization and add corresponding route
-        this.authnIntegration = this.createIntegration(
-            "AuthnIntegration",
-            this.authnFn
-        );
+        this.authnIntegration = this.createIntegration("AuthnIntegration", this.authnFn);
         this.authnIntegrationRoute = this.apiGw.addRoutes({
             path: authnRoute,
             methods: [apigw.HttpMethod.GET],
             integration: this.authnIntegration,
         });
 
-        this.callbIntegration = this.createIntegration(
-            "CallbIntegration",
-            this.callbFn
-        );
+        this.callbIntegration = this.createIntegration("CallbIntegration", this.callbFn);
         this.callbIntegrationRoute = this.apiGw.addRoutes({
             path: callbRoute,
             methods: [apigw.HttpMethod.GET],
             integration: this.callbIntegration,
         });
 
-        this.tokenIntegration = this.createIntegration(
-            "TokenIntegration",
-            this.tokenFn
-        );
+        this.tokenIntegration = this.createIntegration("TokenIntegration", this.tokenFn);
         this.tokenIntegrationRoute = this.apiGw.addRoutes({
             path: tokenRoute,
             methods: [apigw.HttpMethod.POST],
@@ -147,20 +121,16 @@ export class TypescriptStack extends cdk.Stack {
 
         // CDK NAG SUPPRESSION RULES
 
-        NagSuppressions.addResourceSuppressions(
-            this.authnFnSecretsManagerPolicy,
-            [
-                {
-                    id: "AwsSolutions-IAM5",
-                    reason: "API is resource agnostic but resource key required in statement.",
-                },
-            ]
-        );
+        NagSuppressions.addResourceSuppressions(this.authnFnSecretsManagerPolicy, [
+            {
+                id: "AwsSolutions-IAM5",
+                reason: "API is resource agnostic but resource key required in statement.",
+            },
+        ]);
 
         NagSuppressions.addResourceSuppressionsByPath(
             this,
-            this.stackName +
-                "/LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8a/ServiceRole/Resource",
+            this.stackName + "/LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8a/ServiceRole/Resource",
             [
                 {
                     id: "AwsSolutions-IAM4",
@@ -171,8 +141,7 @@ export class TypescriptStack extends cdk.Stack {
 
         NagSuppressions.addResourceSuppressionsByPath(
             this,
-            this.stackName +
-                "/LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8a/ServiceRole/DefaultPolicy/Resource",
+            this.stackName + "/LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8a/ServiceRole/DefaultPolicy/Resource",
             [
                 {
                     id: "AwsSolutions-IAM5",
@@ -217,33 +186,39 @@ export class TypescriptStack extends cdk.Stack {
         NagSuppressions.addResourceSuppressions(this.tokenIntegrationRoute, [
             { id: "AwsSolutions-APIG4", reason: "Demo purposes only." },
         ]);
+
+        NagSuppressions.addResourceSuppressions(this.authnFnExecRole, [
+            { id: "AwsSolutions-IAM4", reason: "Demo purposes only." },
+        ]);
+
+        NagSuppressions.addResourceSuppressions(this.callbFnExecRole, [
+            { id: "AwsSolutions-IAM4", reason: "Demo purposes only." },
+        ]);
+
+        NagSuppressions.addResourceSuppressions(this.tokenFnExecRole, [
+            { id: "AwsSolutions-IAM4", reason: "Demo purposes only." },
+        ]);
     }
 
     private createApiGw(): apigw.HttpApi {
         return new apigw.HttpApi(this, "ApiGateway", {
-            description:
-                "Handles requests and responses between Cognito and 3rd party IdP",
+            description: "Handles requests and responses between Cognito and 3rd party IdP",
             createDefaultStage: false,
         });
     }
 
-    private createIntegration(
-        name: string,
-        fn: lambda.Function
-    ): HttpLambdaIntegration {
+    private createIntegration(name: string, fn: lambda.Function): HttpLambdaIntegration {
         return new HttpLambdaIntegration(name, fn);
     }
 
     private createFnExecRole(n: string): iam.Role {
         return new iam.Role(this, n + "FunctionExecRole", {
             assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
+            managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName("service-role/AWSLambdaBasicExecutionRole")],
         });
     }
 
-    private createFnPython(
-        n: string,
-        executionRole: iam.Role
-    ): lambda.Function {
+    private createFnPython(n: string, executionRole: iam.Role): lambda.Function {
         return new lambda.Function(this, n + "Function", {
             code: lambda.Code.fromAsset("./lambda/python/" + n.toLowerCase()),
             handler: n.toLowerCase() + "_flow.handler",
