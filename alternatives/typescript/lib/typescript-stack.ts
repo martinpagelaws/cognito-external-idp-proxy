@@ -132,21 +132,19 @@ export class TypescriptStack extends cdk.Stack {
         this.apiGwTokenRouteUri = this.apiGw.apiEndpoint + "/" + apiVersion + tokenRoute;
 
         this.cognitoUserPool = this.createCognitoUserPool();
-        this.cognitoUserPoolIdpOidc = new cognito.UserPoolIdentityProviderOidc(
-            this, "UserPoolIdentityProviderOidc", {
-                clientId: idpClientId,
-                clientSecret: idpClientSecret,
-                issuerUrl: idpIssuerUrl,
-                userPool: this.cognitoUserPool,
-                attributeRequestMethod: cognito.OidcAttributeRequestMethod.GET,
-                endpoints: {
-                    authorization: this.apiGwAuthnRouteUri,
-                    jwksUri: idpIssuerUrl + idpKeysPath,
-                    token: this.apiGwTokenRouteUri,
-                    userInfo: idpIssuerUrl + idpAttributesPath,
-                },
-            });
-
+        this.cognitoUserPoolIdpOidc = new cognito.UserPoolIdentityProviderOidc(this, "UserPoolIdentityProviderOidc", {
+            clientId: idpClientId,
+            clientSecret: idpClientSecret,
+            issuerUrl: idpIssuerUrl,
+            userPool: this.cognitoUserPool,
+            attributeRequestMethod: cognito.OidcAttributeRequestMethod.GET,
+            endpoints: {
+                authorization: this.apiGwAuthnRouteUri,
+                jwksUri: idpIssuerUrl + idpKeysPath,
+                token: this.apiGwTokenRouteUri,
+                userInfo: idpIssuerUrl + idpAttributesPath,
+            },
+        });
 
         // CDK NAG SUPPRESSION RULES
 
@@ -229,11 +227,10 @@ export class TypescriptStack extends cdk.Stack {
         ]);
 
         NagSuppressions.addResourceSuppressions(this.cognitoUserPool, [
-            { "id": "AwsSolutions-COG1", "reason": "Demo is supposed to integrate only with external IdP."},
-            { "id": "AwsSolutions-COG2", "reason": "Defined by external IdP."},
-            { "id": "AwsSolutions-COG3", "reason": "Demo purposes only."}
+            { id: "AwsSolutions-COG1", reason: "Demo is supposed to integrate only with external IdP." },
+            { id: "AwsSolutions-COG2", reason: "Defined by external IdP." },
+            { id: "AwsSolutions-COG3", reason: "Demo purposes only." },
         ]);
-
     }
 
     // RESOURCE CREATION FUNCTIONS
