@@ -28,7 +28,10 @@ export class TypescriptStack extends cdk.Stack {
     private readonly callbFnExecRole: iam.Role;
     private readonly callbIntegration: HttpLambdaIntegration;
     private readonly callbIntegrationRoute: HttpRoute[];
+    private readonly cognitoOAuthScopes: Array<cognito.OAuthScope> = [];
     private readonly cognitoUserPool: cognito.UserPool;
+    private readonly cognitoUserPoolClient: cognito.UserPoolClient;
+    private readonly cognitoUserPoolDomain: cognito.UserPoolDomain;
     private readonly cognitoUserPoolIdpOidc: cognito.UserPoolIdentityProviderOidc;
     private readonly dynamoDbStateTable: dynamodb.Table;
     private readonly tokenFn: lambda.Function;
@@ -57,6 +60,8 @@ export class TypescriptStack extends cdk.Stack {
         const idpScopes = this.node.tryGetContext("idp_scopes");
         const idpKeysPath = this.node.tryGetContext("idp_keys_path");
         const idpAttributesPath = this.node.tryGetContext("idp_attributes_path");
+        const idpName = this.node.tryGetContext("idp_name");
+        const idpAllowedCallbUrl = this.node.tryGetContext("userpool_allowed_callback_url");
 
         // RESOURCE DEFINITIONS
 
@@ -104,7 +109,7 @@ export class TypescriptStack extends cdk.Stack {
         this.apiGw = this.createApiGw();
         this.authnFn.addEnvironment("ProxyCallbackUri", this.apiGw.apiEndpoint + "/" + apiVersion + callbRoute);
 
-        // create an API GW Lambda integration for authorization and add corresponding route
+        // create an API GW Lambda integrations and add corresponding routes
         this.authnIntegration = this.createIntegration("AuthnIntegration", this.authnFn);
         this.authnIntegrationRoute = this.apiGw.addRoutes({
             path: authnRoute,
@@ -126,11 +131,13 @@ export class TypescriptStack extends cdk.Stack {
             integration: this.tokenIntegration,
         });
 
+        // create an API GW Stage / API version and compose the full urls for later reference
         this.apiGwStage = this.createApiGwStage(this.apiGw, apiVersion);
         this.apiGwAuthnRouteUri = this.apiGw.apiEndpoint + "/" + apiVersion + authnRoute;
         this.apiGwCallbRouteUri = this.apiGw.apiEndpoint + "/" + apiVersion + callbRoute;
         this.apiGwTokenRouteUri = this.apiGw.apiEndpoint + "/" + apiVersion + tokenRoute;
 
+        // create the Cognito User Pool and add an OIDC Identity Provider
         this.cognitoUserPool = this.createCognitoUserPool();
         this.cognitoUserPoolIdpOidc = new cognito.UserPoolIdentityProviderOidc(this, "UserPoolIdentityProviderOidc", {
             clientId: idpClientId,
@@ -143,6 +150,48 @@ export class TypescriptStack extends cdk.Stack {
                 jwksUri: idpIssuerUrl + idpKeysPath,
                 token: this.apiGwTokenRouteUri,
                 userInfo: idpIssuerUrl + idpAttributesPath,
+            },
+            name: idpName,
+            scopes: idpScopes.split(" "),
+        });
+
+        // match string scopes to cognito OAuthScope properties
+        for (let scope of idpScopes.split(" ")) {
+            // this.cognitoOAuthScopes.push(cognito.OAuthScope[scope as keyof cognito.OAuthScope]);
+            switch (scope.toLowerCase()) {
+                case "openid":
+                    this.cognitoOAuthScopes.push(cognito.OAuthScope.OPENID);
+                    break;
+                case "email":
+                    this.cognitoOAuthScopes.push(cognito.OAuthScope.EMAIL);
+                    break;
+                case "phone":
+                    this.cognitoOAuthScopes.push(cognito.OAuthScope.PHONE);
+                    break;
+                case "profile":
+                    this.cognitoOAuthScopes.push(cognito.OAuthScope.PROFILE);
+                    break;
+            }
+        }
+
+        // create the Cognito App Client to integrate with your application
+        this.cognitoUserPoolClient = this.cognitoUserPool.addClient("UserPoolClient", {
+            oAuth: {
+                flows: {
+                    authorizationCodeGrant: true,
+                },
+                scopes: this.cognitoOAuthScopes,
+                callbackUrls: [idpAllowedCallbUrl],
+            },
+            supportedIdentityProviders: [
+                cognito.UserPoolClientIdentityProvider.custom(this.cognitoUserPoolIdpOidc.providerName),
+            ],
+        });
+
+        // add domain to use the hosted ui - corresponds with the api gw id just to keep things simple here
+        this.cognitoUserPoolDomain = this.cognitoUserPool.addDomain("UserPoolDomain", {
+            cognitoDomain: {
+                domainPrefix: this.apiGw.apiId,
             },
         });
 
