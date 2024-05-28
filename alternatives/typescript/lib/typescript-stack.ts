@@ -137,6 +137,8 @@ export class TypescriptStack extends cdk.Stack {
         this.callbIntegrationRoute = this.apiGw.addRoutes({
             path: callbRoute,
             methods: [apigw.HttpMethod.GET],
+
+
             integration: this.callbIntegration,
         });
 
