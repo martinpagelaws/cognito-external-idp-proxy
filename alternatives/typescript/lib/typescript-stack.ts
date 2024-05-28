@@ -40,6 +40,8 @@ export class TypescriptStack extends cdk.Stack {
     private readonly secretsManagerSecret: secretsmanager.Secret;
     private readonly tokenFn: lambda.Function;
     private readonly tokenFnExecRole: iam.Role;
+    private readonly tokenFnDynamoDbPolicy: iam.Policy;
+    private readonly tokenFnSecretsManagerPolicy: iam.Policy;
     private readonly tokenIntegration: HttpLambdaIntegration;
     private readonly tokenIntegrationRoute: HttpRoute[];
 
@@ -124,6 +126,13 @@ export class TypescriptStack extends cdk.Stack {
 
         // create an empty SecretsManager secret to hold the private key for private key JWT token requests
         this.secretsManagerSecret = new secretsmanager.Secret(this, "PrivateKey");
+
+        // grant least privilege permissions to token function
+        this.tokenFnDynamoDbPolicy = this.createTokenFnDynamoDbPolicy();
+        this.tokenFn.role?.attachInlinePolicy(this.tokenFnDynamoDbPolicy);
+
+        this.tokenFnSecretsManagerPolicy = this.createTokenFnSecretsManagerPolicy();
+        this.tokenFn.role?.attachInlinePolicy(this.tokenFnSecretsManagerPolicy);
 
         // create an API GW Lambda integrations and add corresponding routes
         this.authnIntegration = this.createIntegration("AuthnIntegration", this.authnFn);
@@ -362,11 +371,33 @@ export class TypescriptStack extends cdk.Stack {
     }
 
     private createAuthnFnSecretsManagerPolicy(): iam.Policy {
-        return new iam.Policy(this, "SecretsManagerPolicy", {
+        return new iam.Policy(this, "authnFnSecretsManagerPolicy", {
             statements: [
                 new iam.PolicyStatement({
                     actions: ["secresmanager:GetRandomPassword"],
                     resources: ["*"],
+                }),
+            ],
+        });
+    }
+
+    private createTokenFnDynamoDbPolicy(): iam.Policy {
+        return new iam.Policy(this, "tokenFnDynamoDbPolicy", {
+            statements: [
+                new iam.PolicyStatement({
+                    actions: ["dynamodb:DescribeTable", "dynamodb:GetItem"],
+                    resources: [this.dynamoDbCodeTable.tableArn],
+                }),
+            ],
+        });
+    }
+
+    private createTokenFnSecretsManagerPolicy(): iam.Policy {
+        return new iam.Policy(this, "tokenFnSecretsManagerPolicy", {
+            statements: [
+                new iam.PolicyStatement({
+                    actions: ["secresmanager:GetSecretValue"],
+                    resources: [this.secretsManagerSecret.secretArn],
                 }),
             ],
         });
