@@ -212,13 +212,13 @@ export class TypescriptStack extends cdk.Stack {
         });
 
         // CDK NAG SUPPRESSION RULES
-        
+
         NagSuppressions.addResourceSuppressions(this.secretsManagerSecret, [
             {
                 id: "AwsSolutions-SMG4",
                 reason: "Cannot rotate due to 3rd party IdP dependency.",
             },
-        ])
+        ]);
 
         NagSuppressions.addResourceSuppressions(this.authnFnSecretsManagerPolicy, [
             {

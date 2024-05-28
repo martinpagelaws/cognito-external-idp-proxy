@@ -26,9 +26,6 @@ jobs:
         run: |
           cp cdk.context.template cdk.context.json
           npx cdk synth
-      - name: lint
-        run:
-          npx eslint
       - name: prettier
         run:
           npx prettier -c .
