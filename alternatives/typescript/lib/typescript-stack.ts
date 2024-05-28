@@ -30,6 +30,7 @@ export class TypescriptStack extends cdk.Stack {
     private readonly callbFnDynamoDbPolicy: iam.Policy;
     private readonly callbIntegration: HttpLambdaIntegration;
     private readonly callbIntegrationRoute: HttpRoute[];
+    private readonly cognitoIdpResponseUri: string;
     private readonly cognitoOAuthScopes: Array<cognito.OAuthScope> = [];
     private readonly cognitoUserPool: cognito.UserPool;
     private readonly cognitoUserPoolClient: cognito.UserPoolClient;
@@ -63,10 +64,12 @@ export class TypescriptStack extends cdk.Stack {
         const idpClientSecret = this.node.tryGetContext("idp_client_secret");
         const idpIssuerUrl = this.node.tryGetContext("idp_issuer_url");
         const idpAuthUri = this.node.tryGetContext("idp_issuer_url") + this.node.tryGetContext("idp_auth_path");
+        const idpTokenUri = this.node.tryGetContext("idp_issuer_url") + this.node.tryGetContext("idp_token_path");
         const idpScopes = this.node.tryGetContext("idp_scopes");
         const idpKeysPath = this.node.tryGetContext("idp_keys_path");
         const idpAttributesPath = this.node.tryGetContext("idp_attributes_path");
         const idpName = this.node.tryGetContext("idp_name");
+        const pkce = String(this.node.tryGetContext("pkce"));
         const idpAllowedCallbUrl = this.node.tryGetContext("userpool_allowed_callback_url");
 
         // RESOURCE DEFINITIONS
@@ -97,17 +100,10 @@ export class TypescriptStack extends cdk.Stack {
                 process.exit(1);
         }
 
-        this.authnFn.addEnvironment("ClientId", idpClientId);
-        this.authnFn.addEnvironment("IdpAuthUri", idpAuthUri);
-
         // add a Dynamod DB table to store state information
         this.dynamoDbStateTable = this.createDynamoDbStateTable();
-        this.authnFn.addEnvironment("DynamoDbStateTable", this.dynamoDbStateTable.tableName);
-        this.callbFn.addEnvironment("DynamoDbStateTable", this.dynamoDbStateTable.tableName);
-
         // add a DynamoDB table to store the authorization code
         this.dynamoDbCodeTable = this.createDynamoDbCodeTable();
-        this.callbFn.addEnvironment("DynamoDbCodeTable", this.dynamoDbCodeTable.tableName);
 
         // Grant least privilege permissions to auth function
         this.authnFnDynamoDbPolicy = this.createAuthnFnDynamoDbPolicy();
@@ -120,10 +116,6 @@ export class TypescriptStack extends cdk.Stack {
         this.callbFnDynamoDbPolicy = this.createCallbFnDynamoDbPolicy();
         this.callbFn.role?.attachInlinePolicy(this.callbFnDynamoDbPolicy);
 
-        // add an API Gateway and its details to the authorization env vars
-        this.apiGw = this.createApiGw();
-        this.authnFn.addEnvironment("ProxyCallbackUri", this.apiGw.apiEndpoint + "/" + apiVersion + callbRoute);
-
         // create an empty SecretsManager secret to hold the private key for private key JWT token requests
         this.secretsManagerSecret = new secretsmanager.Secret(this, "PrivateKey");
 
@@ -134,7 +126,9 @@ export class TypescriptStack extends cdk.Stack {
         this.tokenFnSecretsManagerPolicy = this.createTokenFnSecretsManagerPolicy();
         this.tokenFn.role?.attachInlinePolicy(this.tokenFnSecretsManagerPolicy);
 
-        // create an API GW Lambda integrations and add corresponding routes
+        // Create an API gateway with the required Lambda integrations
+        this.apiGw = this.createApiGw();
+
         this.authnIntegration = this.createIntegration("AuthnIntegration", this.authnFn);
         this.authnIntegrationRoute = this.apiGw.addRoutes({
             path: authnRoute,
@@ -220,8 +214,35 @@ export class TypescriptStack extends cdk.Stack {
             },
         });
 
-        // CDK NAG SUPPRESSION RULES
+        // compose the Cognito idp response URI for later reference
+        this.cognitoIdpResponseUri =
+            "https://" +
+            this.cognitoUserPoolDomain.domainName +
+            ".auth." +
+            this.region +
+            ".amazoncognito.com/oauth2/idpresponse";
 
+        // populate functions with relevant environment variables
+        this.authnFn.addEnvironment("ClientId", idpClientId);
+        this.authnFn.addEnvironment("DynamoDbStateTable", this.dynamoDbStateTable.tableName);
+        this.authnFn.addEnvironment("IdpAuthUri", idpAuthUri);
+        this.authnFn.addEnvironment("ProxyCallbackUri", this.apiGwCallbRouteUri);
+
+        this.callbFn.addEnvironment("CognitoIdpResponseUri", this.cognitoIdpResponseUri);
+        this.callbFn.addEnvironment("DynamoDbStateTable", this.dynamoDbStateTable.tableName);
+        this.callbFn.addEnvironment("DynamoDbCodeTable", this.dynamoDbCodeTable.tableName);
+
+        this.tokenFn.addEnvironment("ClientId", idpClientId);
+        this.tokenFn.addEnvironment("ClientSecret", idpClientSecret);
+        this.tokenFn.addEnvironment("DynamoDbCodeTable", this.dynamoDbCodeTable.tableName);
+        this.tokenFn.addEnvironment("IdpIssuerUrl", idpIssuerUrl);
+        this.tokenFn.addEnvironment("IdpTokenPath", idpTokenUri);
+        this.tokenFn.addEnvironment("ResponseUri", this.apiGwCallbRouteUri);
+        this.tokenFn.addEnvironment("Pkce", pkce);
+        this.tokenFn.addEnvironment("Region", this.region);
+        this.tokenFn.addEnvironment("SecretsManagerPrivateKey", this.secretsManagerSecret.secretName);
+
+        // CDK NAG SUPPRESSION RULES
         NagSuppressions.addResourceSuppressions(this.secretsManagerSecret, [
             {
                 id: "AwsSolutions-SMG4",
