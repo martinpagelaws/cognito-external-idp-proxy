@@ -491,8 +491,8 @@ export class TypescriptStack extends cdk.Stack {
     private createTokenFnLayerVersion(): lambda.LayerVersion {
         return new lambda.LayerVersion(this, "JwtPackageLayer", {
             code: lambda.Code.fromAsset("./layers/token/"),
-            compatibleRuntimes: [ lambda.Runtime.PYTHON_3_10 ],
-            compatibleArchitectures: [ lambda.Architecture.X86_64 ],
+            compatibleRuntimes: [lambda.Runtime.PYTHON_3_10],
+            compatibleArchitectures: [lambda.Architecture.X86_64],
         });
     }
 }
