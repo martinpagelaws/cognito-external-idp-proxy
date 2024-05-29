@@ -42,6 +42,7 @@ export class TypescriptStack extends cdk.Stack {
     private readonly tokenFn: lambda.Function;
     private readonly tokenFnExecRole: iam.Role;
     private readonly tokenFnDynamoDbPolicy: iam.Policy;
+    private readonly tokenFnLayerVersion: lambda.LayerVersion;
     private readonly tokenFnSecretsManagerPolicy: iam.Policy;
     private readonly tokenIntegration: HttpLambdaIntegration;
     private readonly tokenIntegrationRoute: HttpRoute[];
@@ -64,7 +65,7 @@ export class TypescriptStack extends cdk.Stack {
         const idpClientSecret = this.node.tryGetContext("idp_client_secret");
         const idpIssuerUrl = this.node.tryGetContext("idp_issuer_url");
         const idpAuthUri = this.node.tryGetContext("idp_issuer_url") + this.node.tryGetContext("idp_auth_path");
-        const idpTokenUri = this.node.tryGetContext("idp_issuer_url") + this.node.tryGetContext("idp_token_path");
+        const idpTokenPath = this.node.tryGetContext("idp_token_path");
         const idpScopes = this.node.tryGetContext("idp_scopes");
         const idpKeysPath = this.node.tryGetContext("idp_keys_path");
         const idpAttributesPath = this.node.tryGetContext("idp_attributes_path");
@@ -85,7 +86,7 @@ export class TypescriptStack extends cdk.Stack {
                 console.info("Deploying Python Lambdas");
                 this.authnFn = this.createFnPython("Authorization", this.authnFnExecRole);
                 this.callbFn = this.createFnPython("Callback", this.callbFnExecRole);
-                this.tokenFn = this.createFnPython("Token", this.tokenFnExecRole);
+                this.tokenFn = this.createFnPython("Token", this.tokenFnExecRole, 10);
                 break;
             }
             case "rust": {
@@ -100,8 +101,18 @@ export class TypescriptStack extends cdk.Stack {
                 process.exit(1);
         }
 
+        // add 3rd party package layer to token function
+        // $ python3.10 -m \
+        //   pip install -r ./lambda/python/token/requirements.txt \
+        //   --target ./layers/token/python \
+        //   --only-binary=":all:" \
+        //   --platform manylinux2014_x86_64
+        this.tokenFnLayerVersion = this.createTokenFnLayerVersion();
+        this.tokenFn.addLayers(this.tokenFnLayerVersion);
+
         // add a Dynamod DB table to store state information
         this.dynamoDbStateTable = this.createDynamoDbStateTable();
+
         // add a DynamoDB table to store the authorization code
         this.dynamoDbCodeTable = this.createDynamoDbCodeTable();
 
@@ -236,7 +247,7 @@ export class TypescriptStack extends cdk.Stack {
         this.tokenFn.addEnvironment("ClientSecret", idpClientSecret);
         this.tokenFn.addEnvironment("DynamoDbCodeTable", this.dynamoDbCodeTable.tableName);
         this.tokenFn.addEnvironment("IdpIssuerUrl", idpIssuerUrl);
-        this.tokenFn.addEnvironment("IdpTokenPath", idpTokenUri);
+        this.tokenFn.addEnvironment("IdpTokenPath", idpTokenPath);
         this.tokenFn.addEnvironment("ResponseUri", this.apiGwCallbRouteUri);
         this.tokenFn.addEnvironment("Pkce", pkce);
         this.tokenFn.addEnvironment("Region", this.region);
@@ -355,13 +366,19 @@ export class TypescriptStack extends cdk.Stack {
         });
     }
 
-    private createFnPython(n: string, executionRole: iam.Role): lambda.Function {
+    private createFnPython(n: string, executionRole: iam.Role, timeOut?: number): lambda.Function {
+        let timeOutDuration: number = 5;
+        if (typeof timeOut !== "undefined") {
+            timeOutDuration = timeOut;
+        }
+
         return new lambda.Function(this, n + "Function", {
             code: lambda.Code.fromAsset("./lambda/python/" + n.toLowerCase()),
             handler: n.toLowerCase() + "_flow.handler",
             logRetention: RetentionDays.FIVE_DAYS,
             role: executionRole,
             runtime: lambda.Runtime.PYTHON_3_10,
+            timeout: cdk.Duration.seconds(timeOutDuration),
         });
     }
 
@@ -395,7 +412,7 @@ export class TypescriptStack extends cdk.Stack {
         return new iam.Policy(this, "authnFnSecretsManagerPolicy", {
             statements: [
                 new iam.PolicyStatement({
-                    actions: ["secresmanager:GetRandomPassword"],
+                    actions: ["secretsmanager:GetRandomPassword"],
                     resources: ["*"],
                 }),
             ],
@@ -417,7 +434,7 @@ export class TypescriptStack extends cdk.Stack {
         return new iam.Policy(this, "tokenFnSecretsManagerPolicy", {
             statements: [
                 new iam.PolicyStatement({
-                    actions: ["secresmanager:GetSecretValue"],
+                    actions: ["secretsmanager:GetSecretValue"],
                     resources: [this.secretsManagerSecret.secretArn],
                 }),
             ],
@@ -469,5 +486,13 @@ export class TypescriptStack extends cdk.Stack {
 
     private createCognitoUserPool(): cognito.UserPool {
         return new cognito.UserPool(this, "UserPool");
+    }
+
+    private createTokenFnLayerVersion(): lambda.LayerVersion {
+        return new lambda.LayerVersion(this, "JwtPackageLayer", {
+            code: lambda.Code.fromAsset("./layers/token/"),
+            compatibleRuntimes: [ lambda.Runtime.PYTHON_3_10 ],
+            compatibleArchitectures: [ lambda.Architecture.X86_64 ],
+        });
     }
 }
