@@ -16,31 +16,16 @@ import * as logs from "aws-cdk-lib/aws-logs";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import { RetentionDays } from "aws-cdk-lib/aws-logs";
 
-export class TypescriptStack extends cdk.Stack {
+export class PkjwtStack extends cdk.Stack {
     private readonly apiGw: apigw.HttpApi;
-    private readonly apiGwAuthnRouteUri;
-    private readonly apiGwCallbRouteUri;
     private readonly apiGwTokenRouteUri;
     private readonly apiGwStage: apigw.CfnStage;
-    private readonly authnFn: lambda.Function;
-    private readonly authnFnExecRole: iam.Role;
-    private readonly authnFnDynamoDbPolicy: iam.Policy;
-    private readonly authnFnSecretsManagerPolicy: iam.Policy;
-    private readonly authnIntegration: HttpLambdaIntegration;
-    private readonly authnIntegrationRoute: HttpRoute[];
-    private readonly callbFn: lambda.Function;
-    private readonly callbFnExecRole: iam.Role;
-    private readonly callbFnDynamoDbPolicy: iam.Policy;
-    private readonly callbIntegration: HttpLambdaIntegration;
-    private readonly callbIntegrationRoute: HttpRoute[];
     private readonly cognitoIdpResponseUri: string;
     private readonly cognitoOAuthScopes: Array<cognito.OAuthScope> = [];
     private readonly cognitoUserPool: cognito.UserPool;
     private readonly cognitoUserPoolClient: cognito.UserPoolClient;
     private readonly cognitoUserPoolDomain: cognito.UserPoolDomain;
     private readonly cognitoUserPoolIdpOidc: cognito.UserPoolIdentityProviderOidc;
-    private readonly dynamoDbStateTable: dynamodb.Table;
-    private readonly dynamoDbCodeTable: dynamodb.Table;
     private readonly secretsManagerSecret: secretsmanager.Secret;
     private readonly tokenFn: lambda.Function;
     private readonly tokenFnExecRole: iam.Role;
@@ -57,8 +42,6 @@ export class TypescriptStack extends cdk.Stack {
 
         // API GATEWAY
         const apiVersion = this.node.tryGetContext("api_version");
-        const authnRoute = this.node.tryGetContext("api_authn_route");
-        const callbRoute = this.node.tryGetContext("api_callback_route");
         const tokenRoute = this.node.tryGetContext("api_token_route");
 
         // LAMBDA AND ENV VARS
@@ -79,16 +62,12 @@ export class TypescriptStack extends cdk.Stack {
         // RESOURCE DEFINITIONS
 
         // Empty Lambda Execution roles to later populate them with relevant statements
-        this.authnFnExecRole = this.createFnExecRole("Authorization");
-        this.callbFnExecRole = this.createFnExecRole("Callback");
         this.tokenFnExecRole = this.createFnExecRole("Token");
 
         // Deploy lambdas with the selected runtime
         switch (lambdaRuntime) {
             case "python": {
                 console.info("Deploying Python Lambdas");
-                this.authnFn = this.createFnPython("Authorization", this.authnFnExecRole);
-                this.callbFn = this.createFnPython("Callback", this.callbFnExecRole);
                 this.tokenFn = this.createFnPython("Token", this.tokenFnExecRole, 10);
                 break;
             }
@@ -113,49 +92,15 @@ export class TypescriptStack extends cdk.Stack {
         this.tokenFnLayerVersion = this.createTokenFnLayerVersion();
         this.tokenFn.addLayers(this.tokenFnLayerVersion);
 
-        // add a Dynamod DB table to store state information
-        this.dynamoDbStateTable = this.createDynamoDbStateTable();
-
-        // add a DynamoDB table to store the authorization code
-        this.dynamoDbCodeTable = this.createDynamoDbCodeTable();
-
-        // Grant least privilege permissions to auth function
-        this.authnFnDynamoDbPolicy = this.createAuthnFnDynamoDbPolicy();
-        this.authnFn.role?.attachInlinePolicy(this.authnFnDynamoDbPolicy);
-
-        this.authnFnSecretsManagerPolicy = this.createAuthnFnSecretsManagerPolicy();
-        this.authnFn.role?.attachInlinePolicy(this.authnFnSecretsManagerPolicy);
-
-        // Grant least privilege permissions to callback function
-        this.callbFnDynamoDbPolicy = this.createCallbFnDynamoDbPolicy();
-        this.callbFn.role?.attachInlinePolicy(this.callbFnDynamoDbPolicy);
-
         // create an empty SecretsManager secret to hold the private key for private key JWT token requests
         this.secretsManagerSecret = new secretsmanager.Secret(this, "PrivateKey");
 
         // grant least privilege permissions to token function
-        this.tokenFnDynamoDbPolicy = this.createTokenFnDynamoDbPolicy();
-        this.tokenFn.role?.attachInlinePolicy(this.tokenFnDynamoDbPolicy);
-
         this.tokenFnSecretsManagerPolicy = this.createTokenFnSecretsManagerPolicy();
         this.tokenFn.role?.attachInlinePolicy(this.tokenFnSecretsManagerPolicy);
 
         // Create an API gateway with the required Lambda integrations
         this.apiGw = this.createApiGw();
-
-        this.authnIntegration = this.createIntegration("AuthnIntegration", this.authnFn);
-        this.authnIntegrationRoute = this.apiGw.addRoutes({
-            path: authnRoute,
-            methods: [apigw.HttpMethod.GET],
-            integration: this.authnIntegration,
-        });
-
-        this.callbIntegration = this.createIntegration("CallbIntegration", this.callbFn);
-        this.callbIntegrationRoute = this.apiGw.addRoutes({
-            path: callbRoute,
-            methods: [apigw.HttpMethod.GET],
-            integration: this.callbIntegration,
-        });
 
         this.tokenIntegration = this.createIntegration("TokenIntegration", this.tokenFn);
         this.tokenIntegrationRoute = this.apiGw.addRoutes({
@@ -166,8 +111,6 @@ export class TypescriptStack extends cdk.Stack {
 
         // create an API GW Stage / API version and compose the full urls for later reference
         this.apiGwStage = this.createApiGwStage(this.apiGw, apiVersion);
-        this.apiGwAuthnRouteUri = this.apiGw.apiEndpoint + "/" + apiVersion + authnRoute;
-        this.apiGwCallbRouteUri = this.apiGw.apiEndpoint + "/" + apiVersion + callbRoute;
         this.apiGwTokenRouteUri = this.apiGw.apiEndpoint + "/" + apiVersion + tokenRoute;
 
         // create the Cognito User Pool and add an OIDC Identity Provider
@@ -179,7 +122,7 @@ export class TypescriptStack extends cdk.Stack {
             userPool: this.cognitoUserPool,
             attributeRequestMethod: cognito.OidcAttributeRequestMethod.GET,
             endpoints: {
-                authorization: this.apiGwAuthnRouteUri,
+                authorization: idpAuthUri,
                 jwksUri: idpIssuerUrl + idpKeysPath,
                 token: this.apiGwTokenRouteUri,
                 userInfo: idpIssuerUrl + idpAttributesPath,
@@ -237,43 +180,25 @@ export class TypescriptStack extends cdk.Stack {
             ".amazoncognito.com/oauth2/idpresponse";
 
         // populate functions with relevant environment variables
-        this.authnFn.addEnvironment("ClientId", idpClientId);
-        this.authnFn.addEnvironment("DynamoDbStateTable", this.dynamoDbStateTable.tableName);
-        this.authnFn.addEnvironment("IdpAuthUri", idpAuthUri);
-        this.authnFn.addEnvironment("ProxyCallbackUri", this.apiGwCallbRouteUri);
-
-        this.callbFn.addEnvironment("CognitoIdpResponseUri", this.cognitoIdpResponseUri);
-        this.callbFn.addEnvironment("DynamoDbStateTable", this.dynamoDbStateTable.tableName);
-        this.callbFn.addEnvironment("DynamoDbCodeTable", this.dynamoDbCodeTable.tableName);
-
         this.tokenFn.addEnvironment("ClientId", idpClientId);
         this.tokenFn.addEnvironment("ClientSecret", idpClientSecret);
-        this.tokenFn.addEnvironment("DynamoDbCodeTable", this.dynamoDbCodeTable.tableName);
         this.tokenFn.addEnvironment("IdpIssuerUrl", idpIssuerUrl);
         this.tokenFn.addEnvironment("IdpTokenPath", idpTokenPath);
-        this.tokenFn.addEnvironment("ResponseUri", this.apiGwCallbRouteUri);
+        this.tokenFn.addEnvironment("ResponseUri", this.cognitoIdpResponseUri);
         this.tokenFn.addEnvironment("Pkce", pkce);
         this.tokenFn.addEnvironment("Region", this.region);
         this.tokenFn.addEnvironment("SecretsManagerPrivateKey", this.secretsManagerSecret.secretName);
 
         // OUTPUTS
-        new cdk.CfnOutput(this, "ApiGwAuthnEndpoint", { value: this.apiGwAuthnRouteUri });
-        new cdk.CfnOutput(this, "ApiGwCallbackEndpoint", { value: this.apiGwCallbRouteUri });
         new cdk.CfnOutput(this, "ApiGwTokenEndpoint", { value: this.apiGwTokenRouteUri });
         new cdk.CfnOutput(this, "SecretsManagerPrivateKeyArn", { value: this.secretsManagerSecret.secretArn });
+        new cdk.CfnOutput(this, "CognitoIdpResponseUri", { value: this.cognitoIdpResponseUri });
 
         // CDK NAG SUPPRESSION RULES
         NagSuppressions.addResourceSuppressions(this.secretsManagerSecret, [
             {
                 id: "AwsSolutions-SMG4",
                 reason: "Cannot rotate due to 3rd party IdP dependency.",
-            },
-        ]);
-
-        NagSuppressions.addResourceSuppressions(this.authnFnSecretsManagerPolicy, [
-            {
-                id: "AwsSolutions-IAM5",
-                reason: "API is resource agnostic but resource key required in statement.",
             },
         ]);
 
@@ -299,20 +224,6 @@ export class TypescriptStack extends cdk.Stack {
             ]
         );
 
-        NagSuppressions.addResourceSuppressions(this.authnFn, [
-            {
-                id: "AwsSolutions-L1",
-                reason: "No tests in place to guarantee code runs in other versions.",
-            },
-        ]);
-
-        NagSuppressions.addResourceSuppressions(this.callbFn, [
-            {
-                id: "AwsSolutions-L1",
-                reason: "No tests in place to guarantee code runs in other versions.",
-            },
-        ]);
-
         NagSuppressions.addResourceSuppressions(this.tokenFn, [
             {
                 id: "AwsSolutions-L1",
@@ -320,28 +231,8 @@ export class TypescriptStack extends cdk.Stack {
             },
         ]);
 
-        NagSuppressions.addResourceSuppressions(this.dynamoDbStateTable, [
-            { id: "AwsSolutions-DDB3", reason: "Short lived data only." },
-        ]);
-
-        NagSuppressions.addResourceSuppressions(this.authnIntegrationRoute, [
-            { id: "AwsSolutions-APIG4", reason: "Demo purposes only." },
-        ]);
-
-        NagSuppressions.addResourceSuppressions(this.callbIntegrationRoute, [
-            { id: "AwsSolutions-APIG4", reason: "Demo purposes only." },
-        ]);
-
         NagSuppressions.addResourceSuppressions(this.tokenIntegrationRoute, [
             { id: "AwsSolutions-APIG4", reason: "Demo purposes only." },
-        ]);
-
-        NagSuppressions.addResourceSuppressions(this.authnFnExecRole, [
-            { id: "AwsSolutions-IAM4", reason: "Demo purposes only." },
-        ]);
-
-        NagSuppressions.addResourceSuppressions(this.callbFnExecRole, [
-            { id: "AwsSolutions-IAM4", reason: "Demo purposes only." },
         ]);
 
         NagSuppressions.addResourceSuppressions(this.tokenFnExecRole, [
@@ -391,54 +282,6 @@ export class TypescriptStack extends cdk.Stack {
         });
     }
 
-    private createAuthnFnDynamoDbPolicy(): iam.Policy {
-        return new iam.Policy(this, "authnFnDynamoDbPolicy", {
-            statements: [
-                new iam.PolicyStatement({
-                    actions: ["dynamodb:DescribeTable", "dynamodb:PutItem"],
-                    resources: [this.dynamoDbStateTable.tableArn],
-                }),
-            ],
-        });
-    }
-
-    private createCallbFnDynamoDbPolicy(): iam.Policy {
-        return new iam.Policy(this, "callbFnDynamoDbPolicy", {
-            statements: [
-                new iam.PolicyStatement({
-                    actions: ["dynamodb:DescribeTable", "dynamodb:GetItem"],
-                    resources: [this.dynamoDbStateTable.tableArn],
-                }),
-                new iam.PolicyStatement({
-                    actions: ["dynamodb:DescribeTable", "dynamodb:PutItem"],
-                    resources: [this.dynamoDbCodeTable.tableArn],
-                }),
-            ],
-        });
-    }
-
-    private createAuthnFnSecretsManagerPolicy(): iam.Policy {
-        return new iam.Policy(this, "authnFnSecretsManagerPolicy", {
-            statements: [
-                new iam.PolicyStatement({
-                    actions: ["secretsmanager:GetRandomPassword"],
-                    resources: ["*"],
-                }),
-            ],
-        });
-    }
-
-    private createTokenFnDynamoDbPolicy(): iam.Policy {
-        return new iam.Policy(this, "tokenFnDynamoDbPolicy", {
-            statements: [
-                new iam.PolicyStatement({
-                    actions: ["dynamodb:DescribeTable", "dynamodb:GetItem"],
-                    resources: [this.dynamoDbCodeTable.tableArn],
-                }),
-            ],
-        });
-    }
-
     private createTokenFnSecretsManagerPolicy(): iam.Policy {
         return new iam.Policy(this, "tokenFnSecretsManagerPolicy", {
             statements: [
@@ -447,28 +290,6 @@ export class TypescriptStack extends cdk.Stack {
                     resources: [this.secretsManagerSecret.secretArn],
                 }),
             ],
-        });
-    }
-
-    private createDynamoDbStateTable(): dynamodb.Table {
-        return new dynamodb.Table(this, "StateTable", {
-            partitionKey: {
-                name: "state",
-                type: dynamodb.AttributeType.STRING,
-            },
-            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-            timeToLiveAttribute: "ttl",
-        });
-    }
-
-    private createDynamoDbCodeTable(): dynamodb.Table {
-        return new dynamodb.Table(this, "CodeTable", {
-            partitionKey: {
-                name: "auth_code",
-                type: dynamodb.AttributeType.STRING,
-            },
-            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-            timeToLiveAttribute: "ttl",
         });
     }
 
