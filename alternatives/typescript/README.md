@@ -6,4 +6,7 @@ In this directory, you can find the same solution as in the root of the reposito
 
 -   use node18 or higher
 -   copy cdk.context.template to cdk.context.json and populate with your environment and IdP specifics
+-   validate before deployment with `$ npx cdk synth`
 -   run `$ npx cdk deploy`
+-   This solution deploys an empty AWS SecretsManager secret to hold the private key. Refer to root README.md section "Managing keys for Private Key JWT functionality".
+-   add the callback endpoint URL to your IdPs allowed redirect / Sign-In URLs

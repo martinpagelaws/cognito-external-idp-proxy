@@ -1,3 +1,6 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: MIT-0
+
 import * as cdk from "aws-cdk-lib/core";
 import { Construct } from "constructs";
 import { NagSuppressions } from "cdk-nag";
@@ -252,6 +255,12 @@ export class TypescriptStack extends cdk.Stack {
         this.tokenFn.addEnvironment("Pkce", pkce);
         this.tokenFn.addEnvironment("Region", this.region);
         this.tokenFn.addEnvironment("SecretsManagerPrivateKey", this.secretsManagerSecret.secretName);
+
+        // OUTPUTS
+        new cdk.CfnOutput(this, "ApiGwAuthnEndpoint", { value: this.apiGwAuthnRouteUri });
+        new cdk.CfnOutput(this, "ApiGwCallbackEndpoint", { value: this.apiGwCallbRouteUri });
+        new cdk.CfnOutput(this, "ApiGwTokenEndpoint", { value: this.apiGwTokenRouteUri });
+        new cdk.CfnOutput(this, "SecretsManagerPrivateKeyArn", { value: this.secretsManagerSecret.secretArn });
 
         // CDK NAG SUPPRESSION RULES
         NagSuppressions.addResourceSuppressions(this.secretsManagerSecret, [
