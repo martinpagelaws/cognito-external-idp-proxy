@@ -11,7 +11,7 @@
     "idp_token_path": "/oauth2/v1/token",
     "idp_keys_path": "/oauth2/v1/keys",
     "idp_attributes_path": "/userinfo",
-    "idp_name": "YOUR_IDP_NAME",
+    "idp_name": "myIdp",
     "idp_scopes": "openid profile email",
     "pkce": false,
     "userpool_allowed_callback_url": "https://localhost",
