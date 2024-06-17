@@ -7,11 +7,14 @@
     "idp_client_id": "someid",
     "idp_client_secret": "somesecret",
     "idp_issuer_url": "https://example.com",
-    "idp_auth_path": "/oauth2/authorize",
+    "idp_auth_path": "/authorize",
+    "idp_token_path": "/token",
     "idp_keys_path": "/keys",
     "idp_attributes_path": "/userinfo",
     "idp_name": "youridp",
     "idp_scopes": "openid profile email",
+    "pkce": true,
     "userpool_allowed_callback_url": "https://localhost"
+    "stack_name": "CognitoExternalIdpProxyStackTs"
 }
 
