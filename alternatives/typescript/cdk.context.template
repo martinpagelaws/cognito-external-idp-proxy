@@ -4,17 +4,17 @@
     "api_callback_route": "/callback",
     "api_token_route": "/token",
     "lambda_runtime": "python",
-    "idp_client_id": "someid",
-    "idp_client_secret": "somesecret",
+    "idp_client_id": "YOUR_CLIENT_ID",
+    "idp_client_secret": "YOUR_CLIENT_SECRET",
     "idp_issuer_url": "https://example.com",
-    "idp_auth_path": "/authorize",
-    "idp_token_path": "/token",
-    "idp_keys_path": "/keys",
+    "idp_auth_path": "/oauth2/v1/authorize",
+    "idp_token_path": "/oauth2/v1/token",
+    "idp_keys_path": "/oauth2/v1/keys",
     "idp_attributes_path": "/userinfo",
-    "idp_name": "youridp",
+    "idp_name": "YOUR_IDP_NAME",
     "idp_scopes": "openid profile email",
     "pkce": false,
-    "userpool_allowed_callback_url": "https://localhost"
+    "userpool_allowed_callback_url": "https://localhost",
     "stack_name": "CognitoExternalIdpProxyStackTs"
 }
 
