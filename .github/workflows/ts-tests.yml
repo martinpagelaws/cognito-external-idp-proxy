@@ -24,10 +24,16 @@ jobs:
         run: npm install
       - name: install python layer files
         run: pip install -r ./lambda/token/requirements.txt --target ./layers/token/python --only-binary=":all:" --platform manylinux2014_x86_64
-      - name: cdk smoke test
+      - name: cdk smoke test pjwt only
         run: |
           cp cdk.context.template cdk.context.json
           npx cdk synth
+      - name: cdk smoke test full
+        run: |
+          cp cdk.context.template cdk.context.json
+          echo synth test with PKCE and Private Key JWT
+          sed -i 's/\"pkce\": false/\"pkce\": true/g' cdk.context.json
+          cdk synth
       - name: prettier
         run:
           npx prettier -c .

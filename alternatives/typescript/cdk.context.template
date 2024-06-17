@@ -13,7 +13,7 @@
     "idp_attributes_path": "/userinfo",
     "idp_name": "youridp",
     "idp_scopes": "openid profile email",
-    "pkce": true,
+    "pkce": false,
     "userpool_allowed_callback_url": "https://localhost"
     "stack_name": "CognitoExternalIdpProxyStackTs"
 }
