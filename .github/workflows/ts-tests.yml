@@ -33,7 +33,7 @@ jobs:
           cp cdk.context.template cdk.context.json
           echo synth test with PKCE and Private Key JWT
           sed -i 's/\"pkce\": false/\"pkce\": true/g' cdk.context.json
-          cdk synth
+          npx cdk synth
       - name: prettier
         run:
           npx prettier -c .
