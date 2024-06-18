@@ -14,6 +14,7 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
+import { RustFunction } from 'cargo-lambda-cdk';
 import { RetentionDays } from "aws-cdk-lib/aws-logs";
 
 export class PkjwtStack extends cdk.Stack {
@@ -69,11 +70,20 @@ export class PkjwtStack extends cdk.Stack {
             case "python": {
                 console.info("Deploying Python Lambdas");
                 this.tokenFn = this.createFnPython("Token", this.tokenFnExecRole, 10);
+                // add 3rd party package layer to token function
+                // $ python3.10 -m \
+                //   pip install -r ./lambda/python/token/requirements.txt \
+                //   --target ./layers/token/python \
+                //   --only-binary=":all:" \
+                //   --platform manylinux2014_x86_64
+                this.tokenFnLayerVersion = this.createTokenFnLayerVersion();
+                this.tokenFn.addLayers(this.tokenFnLayerVersion);
                 break;
             }
             case "rust": {
-                console.error("Rust runtime not yet implemented");
-                process.exit(1);
+                console.info("Deploying Rust Lambdas");
+                this.tokenFn = this.createFnRust("Token", this.tokenFnExecRole, 10);
+                break;
             }
             default:
                 console.error(
@@ -82,15 +92,6 @@ export class PkjwtStack extends cdk.Stack {
                 );
                 process.exit(1);
         }
-
-        // add 3rd party package layer to token function
-        // $ python3.10 -m \
-        //   pip install -r ./lambda/python/token/requirements.txt \
-        //   --target ./layers/token/python \
-        //   --only-binary=":all:" \
-        //   --platform manylinux2014_x86_64
-        this.tokenFnLayerVersion = this.createTokenFnLayerVersion();
-        this.tokenFn.addLayers(this.tokenFnLayerVersion);
 
         // create an empty SecretsManager secret to hold the private key for private key JWT token requests
         this.secretsManagerSecret = new secretsmanager.Secret(this, "PrivateKey");
@@ -279,6 +280,20 @@ export class PkjwtStack extends cdk.Stack {
             role: executionRole,
             runtime: lambda.Runtime.PYTHON_3_10,
             timeout: cdk.Duration.seconds(timeOutDuration),
+        });
+    }
+
+    private createFnRust(n: string, executionRole: iam.Role, timeOut?: number): lambda.Function {
+        let timeOutDuration: number = 5;
+        if (typeof timeOut !== "undefined") {
+            timeOutDuration = timeOut;
+        }
+
+        return new RustFunction(this, n + "Function", {
+            manifestPath: "../../lambda/rust/" + n.toLowerCase() + "/",
+            timeout: cdk.Duration.seconds(timeOutDuration),
+            logRetention: RetentionDays.FIVE_DAYS,
+            role: executionRole,
         });
     }
 
