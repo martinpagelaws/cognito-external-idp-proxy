@@ -106,7 +106,7 @@ class PjwtWithPkceStack(Stack):
         lambda_function_authorize = _lambda.Function(
             self, "Authorize",
             runtime = _lambda.Runtime.PYTHON_3_10,
-            code = _lambda.Code.from_asset("./lambda/authorize"),
+            code = _lambda.Code.from_asset("./lambda/python/authorize"),
             handler = "authorize_flow.handler",
             environment = {
                 "ClientId": self.node.try_get_context("idp_client_id"),
@@ -147,7 +147,7 @@ class PjwtWithPkceStack(Stack):
         lambda_function_callback = _lambda.Function(
             self, "Callback",
             runtime=_lambda.Runtime.PYTHON_3_10,
-            code=_lambda.Code.from_asset("./lambda/callback"),
+            code=_lambda.Code.from_asset("./lambda/python/callback"),
             handler="callback_flow.handler",
             environment = {
                 "CognitoIdpResponseUri": f"https://{apigw_proxy_api.attr_api_id}.auth.{_aws.REGION}.amazoncognito.com/oauth2/idpresponse",
@@ -191,7 +191,7 @@ class PjwtWithPkceStack(Stack):
         lambda_function_token = _lambda.Function(
             self, "Token",
             runtime=_lambda.Runtime.PYTHON_3_10,
-            code=_lambda.Code.from_asset("./lambda/token"),
+            code=_lambda.Code.from_asset("./lambda/python/token"),
             handler="token_flow.handler",
             timeout=Duration.seconds(30),
             environment = {

@@ -80,7 +80,7 @@ class PjwtStack(Stack):
         lambda_function_token = _lambda.Function(
             self, "Token",
             runtime=_lambda.Runtime.PYTHON_3_10,
-            code=_lambda.Code.from_asset("./lambda/token"),
+            code=_lambda.Code.from_asset("./lambda/python/token"),
             handler="token_flow.handler",
             timeout=Duration.seconds(30),
             environment = {
