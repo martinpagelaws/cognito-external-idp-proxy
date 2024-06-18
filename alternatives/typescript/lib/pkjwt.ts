@@ -273,7 +273,7 @@ export class PkjwtStack extends cdk.Stack {
         }
 
         return new lambda.Function(this, n + "Function", {
-            code: lambda.Code.fromAsset("./lambda/python/" + n.toLowerCase()),
+            code: lambda.Code.fromAsset("../../lambda/python/" + n.toLowerCase()),
             handler: n.toLowerCase() + "_flow.handler",
             logRetention: RetentionDays.FIVE_DAYS,
             role: executionRole,

@@ -79,7 +79,7 @@ export class PkjwtPkceStack extends cdk.Stack {
         // RESOURCE DEFINITIONS
 
         // Empty Lambda Execution roles to later populate them with relevant statements
-        this.authnFnExecRole = this.createFnExecRole("Authorization");
+        this.authnFnExecRole = this.createFnExecRole("Authorize");
         this.callbFnExecRole = this.createFnExecRole("Callback");
         this.tokenFnExecRole = this.createFnExecRole("Token");
 
@@ -87,7 +87,7 @@ export class PkjwtPkceStack extends cdk.Stack {
         switch (lambdaRuntime) {
             case "python": {
                 console.info("Deploying Python Lambdas");
-                this.authnFn = this.createFnPython("Authorization", this.authnFnExecRole);
+                this.authnFn = this.createFnPython("Authorize", this.authnFnExecRole);
                 this.callbFn = this.createFnPython("Callback", this.callbFnExecRole);
                 this.tokenFn = this.createFnPython("Token", this.tokenFnExecRole, 10);
                 break;
@@ -382,7 +382,7 @@ export class PkjwtPkceStack extends cdk.Stack {
         }
 
         return new lambda.Function(this, n + "Function", {
-            code: lambda.Code.fromAsset("./lambda/python/" + n.toLowerCase()),
+            code: lambda.Code.fromAsset("../../lambda/python/" + n.toLowerCase()),
             handler: n.toLowerCase() + "_flow.handler",
             logRetention: RetentionDays.FIVE_DAYS,
             role: executionRole,
