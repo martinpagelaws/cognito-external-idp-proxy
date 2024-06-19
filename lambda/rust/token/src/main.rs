@@ -1,12 +1,12 @@
 use aws_config::{self, BehaviorVersion};
 use aws_sdk_secretsmanager as secretsmanager;
 use jsonwebtoken::{encode, Header, EncodingKey, Algorithm};
-use lambda_http::{run, service_fn, tracing, Body, Error, Request, RequestExt, Response};
-use serde::Deserialize;
-use serde_json::json;
+use lambda_http::{run, service_fn, tracing, Body, Error, Request, Response};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use serde_qs;
 use std::{fmt, result, env};
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
 #[derive(Debug, PartialEq, Deserialize)]
 struct RequestBody {
@@ -14,6 +14,17 @@ struct RequestBody {
     client_id: String,
     redirect_uri: String,
     client_secret: String,
+    code: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct TokenRequestBody {
+    grant_type: String,
+    client_id: String,
+    redirect_uri: String,
+    code_verifier: Option<String>,
+    client_assertion: String,
+    client_assertion_type: String,
     code: String,
 }
 
@@ -31,7 +42,7 @@ impl fmt::Display for RequestValidationError {
     }
 }
 
-fn verify_request_body(request: RequestBody) -> ValidationResult<RequestBody> {
+fn verify_request_body(request: &RequestBody) -> ValidationResult<&RequestBody> {
     if request.client_id != env::var("ClientId").expect("ClientId env var missing") { 
         Err(RequestValidationError) 
     } else if request.client_secret != env::var("ClientSecret").expect("ClientSecret env var missing") {
@@ -44,12 +55,9 @@ fn verify_request_body(request: RequestBody) -> ValidationResult<RequestBody> {
 async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
     // Extract request details from Cognito 
     let event_body = std::str::from_utf8(event.body()).expect("Body not utf-8");
-    println!("EVENT BODY");
-    println!("{:?}", event_body);
-
     let original_request: RequestBody = serde_qs::from_str(event_body).unwrap();
 
-    match verify_request_body(original_request) {
+    match verify_request_body(&original_request) {
         Ok(_) => println!("Original request is valid - proceeding."),
         Err(e) => println!("Error: {}", e),
     }
@@ -68,9 +76,11 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
         .send()
         .await?;
 
-    println!("PRIVATE KEY {:?}", private_key);
+    let private_key_string = private_key.secret_string().unwrap();
+    let private_key_jwk: jsonwebkey::JsonWebKey = private_key_string.parse().unwrap();
+    let private_key_pem = private_key_jwk.key.to_pem();
 
-    // Create and sign the JWT
+    // Create JWT
     let current_time = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
     let expiration_time = current_time + 300;
     let client_id = env::var("ClientId").expect("ClientId env var missing");
@@ -84,17 +94,39 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
         "iat": current_time,
         "exp": expiration_time,
     });
-    println!("CLAIMS {}", claims);
-    
+    let mut header = Header::new(Algorithm::RS256);
+    header.kid = Some(private_key_jwk.key_id).expect("KID missing in private key");
+
+    // Sign JWT
+    let encoding_key: &EncodingKey = &EncodingKey::from_rsa_pem(&private_key_pem.as_bytes()).unwrap();
+    let signed_token = encode(&header, &claims, &encoding_key).unwrap();
+
     // Craft request to IDP
-    
+    let payload = TokenRequestBody {
+        client_assertion: signed_token,
+        client_assertion_type: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer".to_string(),
+        client_id: client_id,
+        grant_type: "authorization_code".to_string(),
+        redirect_uri: env::var("ResponseUri").expect("ResponseUri env var missing"),
+        code_verifier: None,
+        code: original_request.code,
+    };
+    let payload = serde_urlencoded::to_string(&payload).expect("failed to serialize payload");
+
     // Make the token request
+    let token_request_client = reqwest::Client::new();
+    let res = token_request_client.post(idp_token_endpoint)
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .body(payload)
+        .send()
+        .await?;
+    let res_body: Value = res.json().await?;
     
     // Return the response
     let resp = Response::builder()
         .status(200)
         .header("content-type", "text/html")
-        .body("HI".into())
+        .body(res_body.to_string().into())
         .map_err(Box::new)?;
     Ok(resp)
 }
