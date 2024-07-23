@@ -102,6 +102,8 @@ export class PkjwtPkceStack extends cdk.Stack {
             }
             case "rust": {
                 console.info("Deploying Rust Lambdas");
+                this.authnFn = this.createFnRust("Authorize", this.authnFnExecRole, 10);
+                this.callbFn = this.createFnRust("Callback", this.callbFnExecRole, 10);
                 this.tokenFn = this.createFnRust("Token", this.tokenFnExecRole, 10);
                 break;
             }
@@ -112,15 +114,6 @@ export class PkjwtPkceStack extends cdk.Stack {
                 );
                 process.exit(1);
         }
-
-        // add 3rd party package layer to token function
-        // $ python3.10 -m \
-        //   pip install -r ./lambda/python/token/requirements.txt \
-        //   --target ./layers/token/python \
-        //   --only-binary=":all:" \
-        //   --platform manylinux2014_x86_64
-        this.tokenFnLayerVersion = this.createTokenFnLayerVersion();
-        this.tokenFn.addLayers(this.tokenFnLayerVersion);
 
         // add a Dynamod DB table to store state information
         this.dynamoDbStateTable = this.createDynamoDbStateTable();
