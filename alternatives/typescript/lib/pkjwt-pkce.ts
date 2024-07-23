@@ -15,6 +15,7 @@ import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import { RetentionDays } from "aws-cdk-lib/aws-logs";
+import { RustFunction } from "cargo-lambda-cdk";
 
 export class PkjwtPkceStack extends cdk.Stack {
     private readonly apiGw: apigw.HttpApi;
@@ -88,13 +89,21 @@ export class PkjwtPkceStack extends cdk.Stack {
             case "python": {
                 console.info("Deploying Python Lambdas");
                 this.authnFn = this.createFnPython("Authorize", this.authnFnExecRole);
+                // add 3rd party package layer to token function
+                // $ python3.10 -m \
+                //   pip install -r ./lambda/python/token/requirements.txt \
+                //   --target ./layers/token/python \
+                //   --only-binary=":all:" \
+                //   --platform manylinux2014_x86_64
                 this.callbFn = this.createFnPython("Callback", this.callbFnExecRole);
                 this.tokenFn = this.createFnPython("Token", this.tokenFnExecRole, 10);
+                this.tokenFn.addLayers(this.tokenFnLayerVersion);
                 break;
             }
             case "rust": {
-                console.error("Rust runtime not yet implemented");
-                process.exit(1);
+                console.info("Deploying Rust Lambdas");
+                this.tokenFn = this.createFnRust("Token", this.tokenFnExecRole, 10);
+                break;
             }
             default:
                 console.error(
@@ -388,6 +397,20 @@ export class PkjwtPkceStack extends cdk.Stack {
             role: executionRole,
             runtime: lambda.Runtime.PYTHON_3_10,
             timeout: cdk.Duration.seconds(timeOutDuration),
+        });
+    }
+
+    private createFnRust(n: string, executionRole: iam.Role, timeOut?: number): lambda.Function {
+        let timeOutDuration: number = 5;
+        if (typeof timeOut !== "undefined") {
+            timeOutDuration = timeOut;
+        }
+
+        return new RustFunction(this, n + "Function", {
+            manifestPath: "../../lambda/rust/" + n.toLowerCase() + "/",
+            timeout: cdk.Duration.seconds(timeOutDuration),
+            logRetention: RetentionDays.FIVE_DAYS,
+            role: executionRole,
         });
     }
 
