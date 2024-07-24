@@ -7,7 +7,6 @@ use sha2::{Sha256, Digest};
 
 async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
     let original_params = event.query_string_parameters_ref().unwrap();
-    println!("ORIGINAL PARAMS:\n{:?}", original_params);
     let original_state = original_params.first("state").unwrap();
     let original_code = original_params.first("code").unwrap();
 
@@ -21,8 +20,7 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
     state_hasher.update(original_state.as_bytes());
     let state_hash = format!("{:x}", state_hasher.finalize());
 
-    let dynamodb_query = dynamodb_client
-        .get_item()
+    let dynamodb_query = dynamodb_client.get_item()
         .table_name(&env::var("DynamoDbStateTable").expect("DynamoDbStateTable not set in env."))
         .key("state", AttributeValue::S(state_hash))
         .attributes_to_get("code_verifier")

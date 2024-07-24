@@ -1,6 +1,7 @@
 use aws_config::{self, BehaviorVersion};
 use aws_sdk_dynamodb::{self as dynamodb, types::AttributeValue};
 use aws_sdk_secretsmanager::{self as secretsmanager};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use lambda_http::{run, service_fn, tracing, Body, Error, Request, RequestExt, Response};
 use sha2::{Sha256, Digest};
 use std::{env, time::SystemTime};
@@ -10,7 +11,6 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
 
     // Collect original Cognito request details from query string parameters
     let original_params = event.query_string_parameters_ref().unwrap();
-    println!("ORIGINAL PARAMS:\n{:?}", original_params);
 
     // initialize aws config
     let config = aws_config::defaults(BehaviorVersion::latest()).load().await;
@@ -31,7 +31,8 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
     // Hash the code_verifier to send it as the code_challenge during authorize call
     let mut code_hasher = Sha256::new();
     code_hasher.update(code_verifier.as_bytes());
-    let code_challenge = format!("{:x}", code_hasher.finalize());
+    let code_challenge = code_hasher.finalize();
+    let code_challenge_base64 = URL_SAFE_NO_PAD.encode(code_challenge);
 
     // retrieve state from Cognito request and hash it to keep item key short in dynamodb
     let cognito_state = original_params.first("state").unwrap();
@@ -61,7 +62,7 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
             ("redirect_uri", &env::var("ProxyCallbackUri").expect("ProxyCallbackUri not set in env")),
             ("client_id", original_params.first("client_id").unwrap()),
             ("response_type", original_params.first("response_type").unwrap()),
-            ("code_challenge", &code_challenge),
+            ("code_challenge", &code_challenge_base64),
             ("code_challenge_method", "S256"),
         ]
     ).unwrap();

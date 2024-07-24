@@ -1,4 +1,5 @@
 use aws_config::{self, BehaviorVersion};
+use aws_sdk_dynamodb::{self as dynamodb, types::AttributeValue};
 use aws_sdk_secretsmanager as secretsmanager;
 use jsonwebtoken::{encode, Header, EncodingKey, Algorithm};
 use lambda_http::{run, service_fn, tracing, Body, Error, Request, Response};
@@ -22,7 +23,7 @@ struct TokenRequestBody {
     grant_type: String,
     client_id: String,
     redirect_uri: String,
-    code_verifier: Option<String>,
+    code_verifier: String,
     client_assertion: String,
     client_assertion_type: String,
     code: String,
@@ -101,6 +102,20 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
     let encoding_key: &EncodingKey = &EncodingKey::from_rsa_pem(&private_key_pem.as_bytes()).unwrap();
     let signed_token = encode(&header, &claims, &encoding_key).unwrap();
 
+    // retrieve code_verifier if PKCE is used
+    let mut code_verifier: Option<String> = None;
+    if env::var("Pkce").expect("Pkce not set in env.").to_lowercase() == "true" {
+        println!("USING PKCE");
+        let dynamodb_client = dynamodb::Client::new(&config);
+        let dynamodb_query = dynamodb_client.get_item()
+            .table_name(env::var("DynamoDbCodeTable").expect("DynamoDbCodeTable not set in env."))
+            .key("auth_code", AttributeValue::S(original_request.code.clone()))
+            .attributes_to_get("code_verifier")
+            .send()
+            .await?;
+        code_verifier = Some(dynamodb_query.item().unwrap().get("code_verifier").unwrap().as_s().unwrap().to_string());
+    }
+
     // Craft request to IDP
     let payload = TokenRequestBody {
         client_assertion: signed_token,
@@ -108,9 +123,10 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
         client_id: client_id,
         grant_type: "authorization_code".to_string(),
         redirect_uri: env::var("ResponseUri").expect("ResponseUri env var missing"),
-        code_verifier: None,
+        code_verifier: code_verifier.unwrap_or("None".to_string()),
         code: original_request.code,
     };
+    println!("PAYLOAD{:?}", payload);
     let payload = serde_urlencoded::to_string(&payload).expect("failed to serialize payload");
 
     // Make the token request
