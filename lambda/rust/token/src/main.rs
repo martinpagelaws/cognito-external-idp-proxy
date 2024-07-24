@@ -126,7 +126,6 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
         code_verifier: code_verifier.unwrap_or("None".to_string()),
         code: original_request.code,
     };
-    println!("PAYLOAD{:?}", payload);
     let payload = serde_urlencoded::to_string(&payload).expect("failed to serialize payload");
 
     // Make the token request
