@@ -29,11 +29,18 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
         .send()
         .await?;
 
-    println!("{:?}", dynamodb_query.item());
+    let code_verifier: String = dynamodb_query.item().unwrap().get("code_verifier").unwrap().as_s().unwrap().to_string();
 
     // store auth_code and code_verifier in auth_code_table with ttl
     let current_time = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
     let code_ttl = current_time + 300;
+    dynamodb_client.put_item()
+        .table_name(env::var("DynamoDbCodeTable").expect("DynamoDbCodeTable not set in env."))
+        .item("auth_code", AttributeValue::S(original_code.to_string()))
+        .item("code_verifier", AttributeValue::S(code_verifier))
+        .item("ttl", AttributeValue::N(code_ttl.to_string()))
+        .send()
+        .await?;
 
     // craft redirect uri to Cognito IDP response endpoint
     let cognito_idp_response = Url::parse_with_params(&env::var("CognitoIdpResponseUri").expect("CognitoIdpResponseUri not set in env."),
@@ -42,7 +49,6 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
             ("code", original_code),
         ]
     ).unwrap();
-
 
     let resp = Response::builder()
         .status(302)
