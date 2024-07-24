@@ -97,6 +97,7 @@ export class PkjwtPkceStack extends cdk.Stack {
                 //   --platform manylinux2014_x86_64
                 this.callbFn = this.createFnPython("Callback", this.callbFnExecRole);
                 this.tokenFn = this.createFnPython("Token", this.tokenFnExecRole, 10);
+                this.tokenFnLayerVersion = this.createTokenFnLayerVersion();
                 this.tokenFn.addLayers(this.tokenFnLayerVersion);
                 break;
             }
