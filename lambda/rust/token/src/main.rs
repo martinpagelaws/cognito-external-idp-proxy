@@ -9,6 +9,12 @@ use serde_qs;
 use std::{fmt, result, env};
 use std::time::SystemTime;
 
+#[derive(Clone)]
+struct Clients {
+    dynamodb_client: dynamodb::Client,
+    sm_client: secretsmanager::Client,
+}
+
 #[derive(Debug, PartialEq, Deserialize)]
 struct RequestBody {
     grant_type: String,
@@ -53,7 +59,7 @@ fn verify_request_body(request: &RequestBody) -> ValidationResult<&RequestBody> 
     }
 }
 
-async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
+async fn function_handler(clients: &Clients, event: Request) -> Result<Response<Body>, Error> {
     // Extract request details from Cognito 
     let event_body = std::str::from_utf8(event.body()).expect("Body not utf-8");
     let original_request: RequestBody = serde_qs::from_str(event_body).unwrap();
@@ -63,25 +69,21 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
         Err(e) => println!("Error: {}", e),
     }
 
-    // Initialize AWS config
-    let config = aws_config::defaults(BehaviorVersion::latest()).load().await;
-
-    // let pkce_toggle = env::var("Pkce").unwrap_or("false".to_string()).to_lowercase();
-    
     // Get private key from Secrets Manager
-    let sm_client = secretsmanager::Client::new(&config);
-
-    let private_key = sm_client
+    println!("SM CALL STARTS");
+    let private_key = clients.sm_client
         .get_secret_value()
         .secret_id(env::var("SecretsManagerPrivateKey").expect("SecretsManagerPrivateKey env var missing"))
         .send()
         .await?;
+    println!("SM CALL FINISHES");
 
     let private_key_string = private_key.secret_string().unwrap();
     let private_key_jwk: jsonwebkey::JsonWebKey = private_key_string.parse().unwrap();
     let private_key_pem = private_key_jwk.key.to_pem();
 
     // Create JWT
+    println!("START SIGNUNG PROCESS");
     let current_time = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
     let expiration_time = current_time + 300;
     let client_id = env::var("ClientId").expect("ClientId env var missing");
@@ -101,19 +103,20 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
     // Sign JWT
     let encoding_key: &EncodingKey = &EncodingKey::from_rsa_pem(&private_key_pem.as_bytes()).unwrap();
     let signed_token = encode(&header, &claims, &encoding_key).unwrap();
+    println!("FINISHED SIGNING PROCESS");
 
     // retrieve code_verifier if PKCE is used
     let mut code_verifier: Option<String> = None;
     if env::var("Pkce").expect("Pkce not set in env.").to_lowercase() == "true" {
-        println!("USING PKCE");
-        let dynamodb_client = dynamodb::Client::new(&config);
-        let dynamodb_query = dynamodb_client.get_item()
+        println!("START GET CODE VERIFIER PKCE");
+        let dynamodb_query = clients.dynamodb_client.get_item()
             .table_name(env::var("DynamoDbCodeTable").expect("DynamoDbCodeTable not set in env."))
             .key("auth_code", AttributeValue::S(original_request.code.clone()))
             .attributes_to_get("code_verifier")
             .send()
             .await?;
         code_verifier = Some(dynamodb_query.item().unwrap().get("code_verifier").unwrap().as_s().unwrap().to_string());
+        println!("FINISHED GET CODE VERIFIER PKCE");
     }
 
     // Craft request to IDP
@@ -129,6 +132,7 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
     let payload = serde_urlencoded::to_string(&payload).expect("failed to serialize payload");
 
     // Make the token request
+    println!("START IDP REQUEST"); 
     let token_request_client = reqwest::Client::new();
     let res = token_request_client.post(idp_token_endpoint)
         .header("Content-Type", "application/x-www-form-urlencoded")
@@ -136,6 +140,7 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
         .send()
         .await?;
     let res_body: Value = res.json().await?;
+    println!("FINISHED IDP REQUEST"); 
     
     // Return the response
     let resp = Response::builder()
@@ -150,5 +155,18 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
 async fn main() -> Result<(), Error> {
     tracing::init_default_subscriber();
 
-    run(service_fn(function_handler)).await
+    // initialize aws config
+    let config = aws_config::defaults(BehaviorVersion::latest()).load().await;
+    let shared_clients = Clients {
+        dynamodb_client: dynamodb::Client::new(&config),
+        sm_client: secretsmanager::Client::new(&config),
+    };
+
+    let func = service_fn(move |event| {
+        let clients_ref = shared_clients.clone();
+        async move { function_handler(&clients_ref, event).await }
+    });
+
+    run(func).await?;
+    Ok(())
 }

@@ -3,23 +3,24 @@ use aws_sdk_dynamodb::{self as dynamodb, types::AttributeValue};
 use aws_sdk_secretsmanager::{self as secretsmanager};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use lambda_http::{run, service_fn, tracing, Body, Error, Request, RequestExt, Response};
+//use lambda_runtime::{service_fn, run, Error, LambdaEvent};
 use sha2::{Sha256, Digest};
 use std::{env, time::SystemTime};
 use url::Url;
 
-async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
+#[derive(Clone)]
+struct Clients {
+    dynamodb_client: dynamodb::Client,
+    sm_client: secretsmanager::Client,
+}
+
+async fn function_handler(clients: &Clients, event: Request) -> Result<Response<Body>, Error> {
 
     // Collect original Cognito request details from query string parameters
     let original_params = event.query_string_parameters_ref().unwrap();
 
-    // initialize aws config
-    let config = aws_config::defaults(BehaviorVersion::latest()).load().await;
-    let sm_client = secretsmanager::Client::new(&config);
-    let dynamodb_client = dynamodb::Client::new(&config);
- 
-
     // Get random string from secrets manager as the code_verifier
-    let random_password = sm_client
+    let random_password = clients.sm_client
         .get_random_password()
         .password_length(64)
         .exclude_punctuation(true)
@@ -45,7 +46,7 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
     let state_ttl = current_time + 300;
 
     // store hashed state with corresponding code_verifier in dynamodb with ttl
-    dynamodb_client.put_item()
+    clients.dynamodb_client.put_item()
         .table_name(env::var("DynamoDbStateTable").expect("DynamoDbStateTable not set in env."))
         .item("state", AttributeValue::S(state_hash))
         .item("code_verifier", AttributeValue::S(code_verifier.to_string()))
@@ -54,7 +55,6 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
         .await?;
 
     // craft authorize url to the IdP with adjusted query string params
-    
     let idp_redirect = Url::parse_with_params(&env::var("IdpAuthUri").expect("IdpAuthUri not set in env."),
         &[
             ("scope", original_params.first("scope").unwrap()),
@@ -79,5 +79,18 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
 async fn main() -> Result<(), Error> {
     tracing::init_default_subscriber();
 
-    run(service_fn(function_handler)).await
+    // initialize aws config
+    let config = aws_config::defaults(BehaviorVersion::latest()).load().await;
+    let shared_clients = Clients {
+        sm_client: secretsmanager::Client::new(&config),
+        dynamodb_client: dynamodb::Client::new(&config),
+    };
+
+    let func = service_fn(move |event| {
+        let clients_ref = shared_clients.clone();
+        async move { function_handler(&clients_ref, event).await }
+    });
+
+    run(func).await?;
+    Ok(())
 }
