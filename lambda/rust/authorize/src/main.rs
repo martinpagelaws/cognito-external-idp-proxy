@@ -3,7 +3,6 @@ use aws_sdk_dynamodb::{self as dynamodb, types::AttributeValue};
 use aws_sdk_secretsmanager::{self as secretsmanager};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use lambda_http::{run, service_fn, tracing, Body, Error, Request, RequestExt, Response};
-//use lambda_runtime::{service_fn, run, Error, LambdaEvent};
 use sha2::{Sha256, Digest};
 use std::{env, time::SystemTime};
 use url::Url;
@@ -17,7 +16,10 @@ struct Clients {
 async fn function_handler(clients: &Clients, event: Request) -> Result<Response<Body>, Error> {
 
     // Collect original Cognito request details from query string parameters
-    let original_params = event.query_string_parameters_ref().unwrap();
+    let original_params = match event.query_string_parameters_ref() {
+        Some(params) => params,
+        None => return Ok(Response::builder().status(400).body("Missing query string parameters".into()).map_err(Box::new)?),
+    };
 
     // Get random string from secrets manager as the code_verifier
     let random_password = clients.sm_client
@@ -27,6 +29,7 @@ async fn function_handler(clients: &Clients, event: Request) -> Result<Response<
         .include_space(false)
         .send()
         .await?;
+    // TODO: handle error
     let code_verifier = random_password.random_password().unwrap();
 
     // Hash the code_verifier to send it as the code_challenge during authorize call
@@ -36,6 +39,7 @@ async fn function_handler(clients: &Clients, event: Request) -> Result<Response<
     let code_challenge_base64 = URL_SAFE_NO_PAD.encode(code_challenge);
 
     // retrieve state from Cognito request and hash it to keep item key short in dynamodb
+    // TODO: Combine all parameter checks before any logic runs
     let cognito_state = original_params.first("state").unwrap();
     let mut state_hasher = Sha256::new();
     state_hasher.update(cognito_state.as_bytes());
